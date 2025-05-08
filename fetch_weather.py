@@ -54,9 +54,15 @@ def fetch_weather(city, api_key):
 
     # Save the data to CSV file
     try:
+        # Get current date and time separately
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+        
         # Extract the most important weather data
         weather_data = {
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'date': date_str,
+            'time': time_str,
             'city': data['name'],
             'description': data['weather'][0]['description'],
             'temperature': data['main']['temp'],
@@ -65,14 +71,24 @@ def fetch_weather(city, api_key):
             'pressure': data['main']['pressure'],
             'wind_speed': data['wind']['speed'],
             'wind_deg': data['wind'].get('deg', ''),
-            'visibility': data.get('visibility', '')
+            'visibility': data.get('visibility', ''),
+            'longitude': data['coord']['lon'],
+            'latitude': data['coord']['lat']
         }
         
         # Check if file exists to determine if we need headers
         file_exists = False
         try:
-            with open(OUTPUT_FILE, 'r'):
+            with open(OUTPUT_FILE, 'r') as f:
+                # Read first line to check header format
+                first_line = f.readline().strip()
                 file_exists = True
+                
+                # Check if the CSV format needs migration
+                if first_line.startswith('timestamp,') and 'longitude' not in first_line:
+                    print("CSV format needs migration. Converting format...")
+                    migrate_csv_format()
+                
         except FileNotFoundError:
             pass
         
@@ -84,8 +100,8 @@ def fetch_weather(city, api_key):
             writer.writerow(weather_data)
         
         # Print weather info
-        print(f"Weather updated at {datetime.now().strftime('%H:%M:%S')}")
-        print(f"City: {data['name']}")
+        print(f"Weather updated at {time_str}")
+        print(f"City: {data['name']} (Lon: {data['coord']['lon']}, Lat: {data['coord']['lat']})")
         print(f"Temperature: {data['main']['temp']:.1f}°C, {data['weather'][0]['description']}")
         print(f"Wind: {data['wind']['speed']} m/s from {data['wind'].get('deg', 'unknown')}°")
         print(f"Humidity: {data['main']['humidity']}%, Pressure: {data['main']['pressure']} hPa")
@@ -93,6 +109,75 @@ def fetch_weather(city, api_key):
         
     except Exception as e:
         print(f"Error saving weather data: {e}")
+
+def migrate_csv_format():
+    """Migrate existing CSV to new format with separate date/time columns and coordinates"""
+    try:
+        # Create a backup of the current file
+        backup_file = f"{OUTPUT_FILE}.bak"
+        if os.path.exists(OUTPUT_FILE):
+            with open(OUTPUT_FILE, 'r', newline='') as src, open(backup_file, 'w', newline='') as dst:
+                dst.write(src.read())
+            print(f"Backup created: {backup_file}")
+            
+            # Read the old format
+            rows = []
+            with open(OUTPUT_FILE, 'r', newline='') as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for row in reader:
+                    rows.append(row)
+            
+            # Create the new format file
+            if rows:
+                with open(OUTPUT_FILE, 'w', newline='') as f:
+                    # Define new fieldnames
+                    new_fieldnames = ['date', 'time', 'city', 'description', 'temperature', 
+                                    'feels_like', 'humidity', 'pressure', 'wind_speed', 
+                                    'wind_deg', 'visibility', 'longitude', 'latitude']
+                    
+                    writer = csv.DictWriter(f, fieldnames=new_fieldnames)
+                    writer.writeheader()
+                    
+                    # Convert each row
+                    for row in rows:
+                        # Split timestamp into date and time if available
+                        date_str = ""
+                        time_str = ""
+                        if 'timestamp' in row:
+                            parts = row['timestamp'].split(' ')
+                            if len(parts) >= 2:
+                                date_str = parts[0]
+                                time_str = parts[1]
+                        
+                        # Create new row
+                        new_row = {
+                            'date': date_str,
+                            'time': time_str,
+                            'city': row.get('city', ''),
+                            'description': row.get('description', ''),
+                            'temperature': row.get('temperature', ''),
+                            'feels_like': row.get('feels_like', ''),
+                            'humidity': row.get('humidity', ''),
+                            'pressure': row.get('pressure', ''),
+                            'wind_speed': row.get('wind_speed', ''),
+                            'wind_deg': row.get('wind_deg', ''),
+                            'visibility': row.get('visibility', ''),
+                            'longitude': '',  # No coordinates in old format
+                            'latitude': ''    # No coordinates in old format
+                        }
+                        writer.writerow(new_row)
+                
+                print(f"Successfully migrated CSV to new format.")
+    except Exception as e:
+        print(f"Error migrating CSV format: {e}")
+        # If there was an error, try to restore from backup
+        if os.path.exists(backup_file):
+            try:
+                os.replace(backup_file, OUTPUT_FILE)
+                print("Restored from backup due to error.")
+            except Exception:
+                print("Failed to restore from backup.")
 
 if __name__ == "__main__":
     # Parse command-line arguments
