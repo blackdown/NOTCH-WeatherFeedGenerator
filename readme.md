@@ -1,24 +1,24 @@
 # NOTCH Weather Controller
 
-A Python application that fetches and monitors weather data using the OpenWeatherMap API with a user-friendly GUI.
+A Python application that fetches and monitors weather data using the OpenWeatherMap (free) API with a simple GUI.
 
 ## Version 0.1 Pre-release Notes (May 8, 2025)
 
-We're excited to announce the first pre-release version of the NOTCH Weather Controller! This initial release includes all core functionality while we continue to refine the application.
+The first pre-release version of the NOTCH Weather Controller! This initial release includes all core functionality.
 
 ### What's Included
 
 - **Complete Weather Monitoring**: Fetch and display current weather conditions including temperature, weather description, and detailed metrics
-- **Dual Interface Options**: Choose between a polished GUI application or command-line interface
-- **Data Persistence**: Automatic CSV logging for historical weather tracking
+- **Dual Interface Options**: Choose between a GUI application or command-line interface
+- **Data Persistence**: Automatic CSV logging for reading with NOTCH
 - **Customizable Settings**: Set your preferred city, update frequency, and securely store your API key
-- **User-friendly Design**: Clean, intuitive interface with essential weather information clearly presented
+- **Encrypted API key storage**: Config files stores an encrypted version of your API key.
 
 ### Known Limitations
 
-- Limited to current weather data only (forecast functionality planned for future releases)
+- Limited to current weather data only
 - Single city monitoring at a time
-- Basic data visualization only
+- Basic data visualisation only
 
 ### Installation
 
@@ -32,6 +32,37 @@ Pre-built executable available in the releases section, or follow the setup inst
 - Allows users to securely store their own API key
 - Enables users to select different cities for weather data
 - Displays weather information in a clean, modern interface
+
+## Command Line Options
+
+The NOTCH Weather Controller can be run from the command line with the following options:
+
+### Executable (Windows)
+
+```bash
+# Basic usage with settings from config.ini
+NOTCH-WeatherController.exe
+
+# Run in command-line mode with options
+NOTCH-WeatherController.exe --city="Paris" --interval=5
+```
+
+### Python Script
+
+```bash
+# Basic usage with settings from config.ini
+python fetch_weather.py
+
+# Specify city and update interval
+python fetch_weather.py --city="Berlin" --interval=10
+```
+
+#### Available Command Line Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--city` | City to fetch weather for | Value from config.ini (or "London") |
+| `--interval` | Update interval in minutes (1-60) | Value from config.ini (or 2 minutes) |
 
 ## Files
 
