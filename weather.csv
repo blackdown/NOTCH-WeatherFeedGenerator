@@ -1,0 +1,4 @@
+timestamp,city,description,temperature,feels_like,humidity,pressure,wind_speed,wind_deg,visibility
+2025-05-08 11:00:49,London,broken clouds,12.87,11.83,62,1020,4.12,40,10000
+2025-05-08 11:15:46,Fernhurst,few clouds,12.82,11.8,63,1020,5.01,45,10000
+2025-05-08 11:21:12,Fernhurst,few clouds,12.82,11.8,63,1020,5.01,45,10000
