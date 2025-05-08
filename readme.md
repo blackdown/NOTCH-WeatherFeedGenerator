@@ -1,4 +1,4 @@
-# NOTCH Weather Controller
+# NOTCH Weather Feed Generator
 
 A Python application that fetches and monitors weather data using the OpenWeatherMap (free) API with a simple GUI.
 
