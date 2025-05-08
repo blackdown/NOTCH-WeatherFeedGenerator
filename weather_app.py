@@ -2,7 +2,7 @@ import requests
 import json
 import time
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import threading
 import os
 import csv
@@ -10,18 +10,19 @@ from datetime import datetime
 import configparser
 import base64
 import webbrowser
+import shutil
 
 # Configuration setup
 CONFIG_FILE = "config.ini"
 DEFAULT_CITY = "London"
 DEFAULT_INTERVAL = 120  # Default update interval in seconds (2 minutes)
-WEATHER_FILE = "weather.csv"
+DEFAULT_WEATHER_FILE = "weather.csv"
 
 class WeatherApp:
     def __init__(self, root):
         self.root = root
         self.root.title("NOTCH Weather Controller")
-        self.root.geometry("450x600")  # Slightly taller to accommodate tabs
+        self.root.geometry("450x650")  # Made taller to accommodate file settings
         self.root.resizable(False, False)
         
         # Load config (API key, city, and update interval)
@@ -29,6 +30,7 @@ class WeatherApp:
         self.api_key = ""
         self.city = DEFAULT_CITY
         self.update_interval = DEFAULT_INTERVAL
+        self.weather_file = DEFAULT_WEATHER_FILE
         self.load_config()
         
         # Configure style
@@ -59,7 +61,7 @@ class WeatherApp:
         self.create_weather_tab()
         self.create_settings_tab()
         
-        # Status bar with update interval display
+        # Status bar with update interval display - moved outside the notebook to always remain visible
         status_frame = ttk.Frame(root)
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
         
@@ -165,7 +167,7 @@ class WeatherApp:
         # Full path display beneath the link
         self.csv_path = ttk.Label(
             csv_frame,
-            text=f"{os.path.abspath(WEATHER_FILE)}",
+            text=f"{os.path.abspath(self.weather_file)}",
             style="Path.TLabel"
         )
         self.csv_path.pack(anchor="w")
@@ -237,14 +239,113 @@ class WeatherApp:
         self.save_interval_btn = ttk.Button(interval_frame, text="Save Interval", command=self.save_interval, width=15)
         self.save_interval_btn.pack(side=tk.RIGHT, padx=10, pady=(0, 10))
         
-        # About section
-        about_frame = ttk.LabelFrame(self.settings_tab, text="About")
-        about_frame.pack(fill=tk.X, pady=10)
+        # File Settings Section
+        file_frame = ttk.LabelFrame(self.settings_tab, text="Data File Settings")
+        file_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Label(about_frame, text="NOTCH Weather Controller").pack(anchor="w", padx=10, pady=(10, 2))
-        ttk.Label(about_frame, text="A simple weather app for desktop.").pack(anchor="w", padx=10, pady=(0, 2))
-        ttk.Label(about_frame, text="Data provided by OpenWeatherMap.org").pack(anchor="w", padx=10, pady=(0, 10))
+        ttk.Label(file_frame, text="Choose where to save weather data:").pack(anchor="w", pady=(10, 5), padx=10)
         
+        # File location info
+        file_info_frame = ttk.Frame(file_frame)
+        file_info_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.file_path_label = ttk.Label(file_info_frame, text=os.path.abspath(self.weather_file), style="Path.TLabel")
+        self.file_path_label.pack(fill=tk.X, expand=True, anchor="w", pady=5)
+        
+        # Migration option
+        migration_frame = ttk.Frame(file_frame)
+        migration_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        
+        self.migrate_var = tk.BooleanVar(value=True)
+        migrate_check = ttk.Checkbutton(
+            migration_frame, 
+            text="Copy existing data to the new file location", 
+            variable=self.migrate_var
+        )
+        migrate_check.pack(side=tk.LEFT)
+        
+        # Save file settings button
+        file_buttons_frame = ttk.Frame(file_frame)
+        file_buttons_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        browse_btn = ttk.Button(file_buttons_frame, text="Browse...", command=self.browse_file, width=10)
+        browse_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.save_file_btn = ttk.Button(file_buttons_frame, text="Save", command=self.save_file_settings, width=10)
+        self.save_file_btn.pack(side=tk.LEFT)
+    
+    def browse_file(self):
+        """Open a dialog to choose where to save the CSV file, including filename"""
+        # Get the current directory and filename
+        current_dir = os.path.dirname(os.path.abspath(self.weather_file))
+        current_filename = os.path.basename(self.weather_file)
+        
+        # Ask for file path with dialog
+        filetypes = [("CSV files", "*.csv"), ("All files", "*.*")]
+        new_file_path = filedialog.asksaveasfilename(
+            initialdir=current_dir,
+            initialfile=current_filename,
+            title="Select CSV file location",
+            filetypes=filetypes,
+            defaultextension=".csv"
+        )
+        
+        # If user cancels, new_path will be empty
+        if new_file_path:
+            # Normalize the path and ensure it has .csv extension
+            new_file_path = os.path.normpath(new_file_path)
+            if not new_file_path.lower().endswith('.csv'):
+                new_file_path += '.csv'
+                
+            # Update the file path label
+            self.file_path_label.config(text=new_file_path)
+    
+    def save_file_settings(self):
+        """Save the file path settings"""
+        # Get the full file path from the label
+        new_file_path = self.file_path_label.cget("text")
+        
+        # Ensure it's a CSV file
+        if not new_file_path.lower().endswith('.csv'):
+            messagebox.showerror("Error", "File must be a CSV file")
+            return
+        
+        # Check if it's different from the current path
+        if new_file_path != os.path.abspath(self.weather_file):
+            # Check if should migrate data
+            migrate = self.migrate_var.get()
+            
+            # Remember the old file path
+            old_file_path = self.weather_file
+            
+            # Update the file path
+            self.weather_file = new_file_path
+            
+            # Update config
+            self.save_config()
+            
+            # If migration is requested and the old file exists, copy the data
+            if migrate and os.path.exists(old_file_path):
+                try:
+                    # Create directory if it doesn't exist
+                    os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
+                    
+                    # Copy the file
+                    shutil.copy2(old_file_path, new_file_path)
+                    messagebox.showinfo("Success", f"Weather data file location updated and data migrated.\nNew location: {new_file_path}")
+                    self.status_label.config(text="Data file location updated with migration")
+                except Exception as e:
+                    messagebox.showerror("Migration Error", f"Error copying data: {str(e)}\nData file location updated but data was not transferred.")
+                    self.status_label.config(text="Data file location updated but migration failed")
+            else:
+                messagebox.showinfo("Success", f"Weather data file location updated.\nNew location: {new_file_path}")
+                self.status_label.config(text="Data file location updated")
+            
+            # Update the CSV path in the weather tab
+            self.csv_path.config(text=os.path.abspath(new_file_path))
+        else:
+            messagebox.showinfo("Info", "File location is unchanged")
+    
     def toggle_api_key_visibility(self):
         """Toggle API key visibility"""
         if self.api_key_entry['show'] == '*':
@@ -336,8 +437,8 @@ class WeatherApp:
     def check_and_migrate_csv_format(self):
         """Check if CSV needs migration and perform it if necessary"""
         try:
-            if os.path.exists(WEATHER_FILE):
-                with open(WEATHER_FILE, 'r') as f:
+            if os.path.exists(self.weather_file):
+                with open(self.weather_file, 'r') as f:
                     # Read first line to check header format
                     first_line = f.readline().strip()
                     
@@ -354,14 +455,14 @@ class WeatherApp:
         """Migrate existing CSV to new format with separate date/time columns and coordinates"""
         try:
             # Create a backup of the current file
-            backup_file = f"{WEATHER_FILE}.bak"
-            if os.path.exists(WEATHER_FILE):
-                with open(WEATHER_FILE, 'r', newline='') as src, open(backup_file, 'w', newline='') as dst:
+            backup_file = f"{self.weather_file}.bak"
+            if os.path.exists(self.weather_file):
+                with open(self.weather_file, 'r', newline='') as src, open(backup_file, 'w', newline='') as dst:
                     dst.write(src.read())
                 
                 # Read the old format
                 rows = []
-                with open(WEATHER_FILE, 'r', newline='') as f:
+                with open(self.weather_file, 'r', newline='') as f:
                     reader = csv.DictReader(f)
                     fieldnames = reader.fieldnames
                     for row in reader:
@@ -369,7 +470,7 @@ class WeatherApp:
                 
                 # Create the new format file
                 if rows:
-                    with open(WEATHER_FILE, 'w', newline='') as f:
+                    with open(self.weather_file, 'w', newline='') as f:
                         # Define new fieldnames
                         new_fieldnames = ['date', 'time', 'city', 'description', 'temperature', 
                                         'feels_like', 'humidity', 'pressure', 'wind_speed', 
@@ -411,7 +512,7 @@ class WeatherApp:
             # If there was an error, try to restore from backup
             if os.path.exists(backup_file):
                 try:
-                    os.replace(backup_file, WEATHER_FILE)
+                    os.replace(backup_file, self.weather_file)
                     self.status_label.config(text="Restored from backup due to error.")
                 except Exception:
                     self.status_label.config(text="Failed to restore from backup.")
@@ -421,12 +522,24 @@ class WeatherApp:
         try:
             import subprocess
             import os
+            
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(os.path.abspath(self.weather_file)), exist_ok=True)
+            
+            # Create the file if it doesn't exist
+            if not os.path.exists(self.weather_file):
+                with open(self.weather_file, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['date', 'time', 'city', 'description', 'temperature', 
+                                   'feels_like', 'humidity', 'pressure', 'wind_speed', 
+                                   'wind_deg', 'visibility', 'longitude', 'latitude'])
+            
             # Use the appropriate command based on the operating system
             if os.name == 'nt':  # Windows
-                os.startfile(os.path.abspath(WEATHER_FILE))
+                os.startfile(os.path.abspath(self.weather_file))
             elif os.name == 'posix':  # macOS, Linux
-                subprocess.call(('open', os.path.abspath(WEATHER_FILE)) if os.uname().sysname == 'Darwin' 
-                               else ('xdg-open', os.path.abspath(WEATHER_FILE)))
+                subprocess.call(('open', os.path.abspath(self.weather_file)) if os.uname().sysname == 'Darwin' 
+                               else ('xdg-open', os.path.abspath(self.weather_file)))
             self.status_label.config(text="Opening CSV file...")
         except Exception as e:
             self.status_label.config(text=f"Error opening CSV: {str(e)}")
@@ -452,6 +565,9 @@ class WeatherApp:
                         self.update_interval = int(self.config['Settings']['update_interval'])
                     except:
                         self.update_interval = DEFAULT_INTERVAL
+                
+                if 'weather_file' in self.config['Settings']:
+                    self.weather_file = self.config['Settings']['weather_file']
     
     def save_config(self):
         """Save configuration to config file"""
@@ -465,10 +581,11 @@ class WeatherApp:
             
         self.config['Settings']['city'] = self.city
         self.config['Settings']['update_interval'] = str(self.update_interval)
+        self.config['Settings']['weather_file'] = self.weather_file
         
         with open(CONFIG_FILE, 'w') as f:
             self.config.write(f)
-            
+    
     def set_update_interval(self):
         """Allow the user to set a custom update interval"""
         # Switch to settings tab
@@ -537,13 +654,16 @@ class WeatherApp:
                     'latitude': data['coord']['lat']
                 }
                 
+                # Ensure the directory exists
+                os.makedirs(os.path.dirname(os.path.abspath(self.weather_file)), exist_ok=True)
+                
                 # Check if file exists and handle CSV format migration if needed
                 file_exists = False
                 existing_rows = []
                 fieldnames = list(weather_data.keys())
                 
                 try:
-                    with open(WEATHER_FILE, 'r', newline='') as f:
+                    with open(self.weather_file, 'r', newline='') as f:
                         # Read first line to check header format
                         first_line = f.readline().strip()
                         file_exists = True
@@ -564,7 +684,7 @@ class WeatherApp:
                     pass
                 
                 # Write to CSV file with newest entry at the top
-                with open(WEATHER_FILE, 'w', newline='') as f:
+                with open(self.weather_file, 'w', newline='') as f:
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
                     
@@ -623,18 +743,18 @@ class WeatherApp:
     def load_weather_from_csv(self):
         """Load the most recent weather data from CSV file"""
         try:
-            if not os.path.exists(WEATHER_FILE):
+            if not os.path.exists(self.weather_file):
                 return False
                 
-            with open(WEATHER_FILE, 'r', newline='') as f:
+            with open(self.weather_file, 'r', newline='') as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 
             if not rows:
                 return False
                 
-            # Get the most recent entry
-            latest = rows[-1]
+            # Get the first entry (since we now add new entries at the top)
+            latest = rows[0]
             
             # Update UI with this data - safely handle potential data type issues
             try:
@@ -690,7 +810,7 @@ class WeatherApp:
     def update_loop(self):
         """Background thread to update weather periodically"""
         # Try to load existing data first
-        if os.path.exists(WEATHER_FILE):
+        if os.path.exists(self.weather_file):
             self.root.after(0, self.load_weather_from_csv)
             
         while self.running:
