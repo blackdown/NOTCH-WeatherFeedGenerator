@@ -2,6 +2,28 @@
 
 A Python application that fetches and monitors weather data using the OpenWeatherMap API with a user-friendly GUI.
 
+## Version 0.1 Pre-release Notes (May 8, 2025)
+
+We're excited to announce the first pre-release version of the NOTCH Weather Controller! This initial release includes all core functionality while we continue to refine the application.
+
+### What's Included
+
+- **Complete Weather Monitoring**: Fetch and display current weather conditions including temperature, weather description, and detailed metrics
+- **Dual Interface Options**: Choose between a polished GUI application or command-line interface
+- **Data Persistence**: Automatic CSV logging for historical weather tracking
+- **Customizable Settings**: Set your preferred city, update frequency, and securely store your API key
+- **User-friendly Design**: Clean, intuitive interface with essential weather information clearly presented
+
+### Known Limitations
+
+- Limited to current weather data only (forecast functionality planned for future releases)
+- Single city monitoring at a time
+- Basic data visualization only
+
+### Installation
+
+Pre-built executable available in the releases section, or follow the setup instructions below for development use.
+
 ## Features
 
 - Retrieves current weather conditions including temperature, weather description, and wind information
