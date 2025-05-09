@@ -5,7 +5,7 @@ a = Analysis(
     ['weather_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('readme.md', '.'), ('weather.csv', '.')],
+    datas=[('readme.md', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
