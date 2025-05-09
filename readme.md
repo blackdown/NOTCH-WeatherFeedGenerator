@@ -140,4 +140,5 @@ All data is stored chronologically in the CSV file, allowing you to track weathe
 
 ## License
 
-Copyright 2025 Antony Bailey 
+Attribution-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
