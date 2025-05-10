@@ -47,7 +47,7 @@ class NOTCHDataTool:
         self.midi_tab_frame = ttk.Frame(self.notebook, padding="20")
         self.settings_tab_frame = ttk.Frame(self.notebook, padding="20")
         
-        self.notebook.add(self.weather_tab_frame, text="Weather")
+        self.notebook.add(self.weather_tab_frame, text="Weather > CSV")
         self.notebook.add(self.midi_tab_frame, text="MIDI")
         self.notebook.add(self.settings_tab_frame, text="Settings")
         
