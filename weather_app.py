@@ -10,12 +10,24 @@ import configparser
 import base64
 import webbrowser
 import shutil
+import json
+# Import MIDI libraries for MIDI message functionality
+try:
+    import rtmidi
+    MIDI_LIBRARY = "rtmidi"
+except ImportError:
+    try:
+        import mido
+        MIDI_LIBRARY = "mido"
+    except ImportError:
+        MIDI_LIBRARY = None
 
 # Configuration setup
 CONFIG_FILE = "config.ini"
 DEFAULT_CITY = "London"
 DEFAULT_INTERVAL = 120  # Default update interval in seconds (2 minutes)
 DEFAULT_WEATHER_FILE = "weather.csv"
+DEFAULT_MIDI_CONFIG = "midi_presets.json"
 
 class WeatherApp:
     def __init__(self, root):
@@ -32,6 +44,14 @@ class WeatherApp:
         self.weather_file = DEFAULT_WEATHER_FILE
         self.load_config()
         
+        # MIDI setup
+        self.midi_outputs = {}
+        self.current_midi_port = None
+        self.midi_presets = []
+        self.midi_channel = 1
+        self.load_midi_config()
+        self.init_midi()
+        
         # Configure style
         style = ttk.Style()
         style.configure("TFrame", background="#f0f0f0")
@@ -43,6 +63,7 @@ class WeatherApp:
         style.configure("Info.TLabel", font=("Arial", 12))
         style.configure("Link.TLabel", font=("Arial", 10), foreground="blue")
         style.configure("Path.TLabel", font=("Arial", 8), foreground="gray")
+        style.configure("MIDI.TButton", background="#2E8B57", foreground="white")
         
         # Create notebook (tabbed interface)
         self.notebook = ttk.Notebook(root)
@@ -52,12 +73,17 @@ class WeatherApp:
         self.weather_tab = ttk.Frame(self.notebook, padding="20")
         self.notebook.add(self.weather_tab, text="Weather")
         
+        # MIDI Tab
+        self.midi_tab = ttk.Frame(self.notebook, padding="20")
+        self.notebook.add(self.midi_tab, text="MIDI")
+        
         # Settings Tab
         self.settings_tab = ttk.Frame(self.notebook, padding="20")
         self.notebook.add(self.settings_tab, text="Settings")
         
         # Create the UI for each tab
         self.create_weather_tab()
+        self.create_midi_tab()
         self.create_settings_tab()
         
         # Status bar with update interval display - moved outside the notebook to always remain visible
@@ -171,180 +197,382 @@ class WeatherApp:
         )
         self.csv_path.pack(anchor="w")
     
-    def create_settings_tab(self):
-        """Create the settings tab UI"""
-        # API Settings Section
-        api_frame = ttk.LabelFrame(self.settings_tab, text="API Settings")
-        api_frame.pack(fill=tk.X, pady=10)
+    def create_midi_tab(self):
+        """Create the MIDI tab UI"""
+        # Title
+        title_label = ttk.Label(self.midi_tab, text="MIDI Controller", style="Header.TLabel")
+        title_label.pack(pady=(0, 20))
         
-        ttk.Label(api_frame, text="Enter your OpenWeatherMap API Key:").pack(anchor="w", pady=(10, 5), padx=10)
+        # MIDI Port Selection
+        port_frame = ttk.LabelFrame(self.midi_tab, text="MIDI Output")
+        port_frame.pack(fill=tk.X, pady=10)
         
-        api_key_frame = ttk.Frame(api_frame)
-        api_key_frame.pack(fill=tk.X, padx=10, pady=5)
+        port_subframe = ttk.Frame(port_frame)
+        port_subframe.pack(fill=tk.X, pady=10, padx=10)
         
-        self.api_key_entry = ttk.Entry(api_key_frame, width=40, show="*")
-        self.api_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Label(port_subframe, text="MIDI Port:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
-        if self.api_key:
-            self.api_key_entry.insert(0, self.api_key)
+        self.port_var = tk.StringVar(value="No MIDI ports available")
+        self.port_dropdown = ttk.Combobox(port_subframe, textvariable=self.port_var, state="readonly")
+        self.port_dropdown.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        self.port_dropdown.bind("<<ComboboxSelected>>", self.on_port_selected)
         
-        self.show_key_btn = ttk.Button(api_key_frame, text="Show", width=5, command=self.toggle_api_key_visibility)
-        self.show_key_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        self.refresh_ports_btn = ttk.Button(port_subframe, text="Refresh", command=self.refresh_midi_ports, width=10)
+        self.refresh_ports_btn.grid(row=0, column=2, padx=5, pady=5)
         
-        # Save API key button
-        save_api_frame = ttk.Frame(api_frame)
-        save_api_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
+        ttk.Label(port_subframe, text="MIDI Channel:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         
-        self.save_api_btn = ttk.Button(save_api_frame, text="Save API Key", command=self.save_api_key, width=15)
-        self.save_api_btn.pack(side=tk.RIGHT)
+        self.channel_var = tk.IntVar(value=self.midi_channel)
+        channel_dropdown = ttk.Combobox(port_subframe, textvariable=self.channel_var, state="readonly",
+                                        values=list(range(1, 17)))
+        channel_dropdown.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        channel_dropdown.bind("<<ComboboxSelected>>", self.on_channel_selected)
         
-        # Get API key info
-        ttk.Label(api_frame, text="Don't have an API key?").pack(anchor="w", pady=(5, 2), padx=10)
+        port_subframe.grid_columnconfigure(1, weight=1)
         
-        api_link = ttk.Label(
-            api_frame,
-            text="Get one for free at OpenWeatherMap.org",
-            foreground="blue",
-            cursor="hand2"
-        )
-        api_link.pack(anchor="w", padx=10, pady=(0, 10))
-        api_link.bind("<Button-1>", lambda e: webbrowser.open("https://openweathermap.org/api"))
+        # MIDI Controls frame
+        controls_frame = ttk.LabelFrame(self.midi_tab, text="MIDI Controls")
+        controls_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        # Update Interval Section
-        interval_frame = ttk.LabelFrame(self.settings_tab, text="Update Interval")
-        interval_frame.pack(fill=tk.X, pady=10)
+        # Note controls
+        note_frame = ttk.Frame(controls_frame)
+        note_frame.pack(fill=tk.X, pady=10, padx=10)
         
-        ttk.Label(interval_frame, text="Set how often to fetch new weather data:").pack(anchor="w", pady=(10, 5), padx=10)
+        ttk.Label(note_frame, text="Note Controls", style="Info.TLabel").grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 10))
         
-        interval_setting_frame = ttk.Frame(interval_frame)
-        interval_setting_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        # Note Number Control
+        ttk.Label(note_frame, text="Note Number:").grid(row=1, column=0, sticky=tk.W, padx=5)
         
-        current_interval = self.update_interval // 60  # Convert to minutes
+        self.note_var = tk.IntVar(value=60)  # Middle C
+        note_spin = ttk.Spinbox(note_frame, from_=0, to=127, textvariable=self.note_var, width=5)
+        note_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
         
-        self.interval_var = tk.IntVar(value=current_interval)
-        interval_scale = ttk.Scale(
-            interval_setting_frame, 
-            from_=1, 
-            to=60, 
-            variable=self.interval_var,
-            orient="horizontal",
-            command=self.update_interval_display
-        )
-        interval_scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Note Velocity Control
+        ttk.Label(note_frame, text="Velocity:").grid(row=1, column=2, sticky=tk.W, padx=5)
         
-        self.interval_display = ttk.Label(interval_setting_frame, text=f"{current_interval} min")
-        self.interval_display.pack(side=tk.LEFT, padx=(10, 0))
+        self.velocity_var = tk.IntVar(value=100)
+        velocity_spin = ttk.Spinbox(note_frame, from_=0, to=127, textvariable=self.velocity_var, width=5)
+        velocity_spin.grid(row=1, column=3, sticky=tk.W, padx=5)
         
-        self.save_interval_btn = ttk.Button(interval_frame, text="Save Interval", command=self.save_interval, width=15)
-        self.save_interval_btn.pack(side=tk.RIGHT, padx=10, pady=(0, 10))
+        # Note Buttons
+        note_buttons_frame = ttk.Frame(note_frame)
+        note_buttons_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=10)
         
-        # File Settings Section
-        file_frame = ttk.LabelFrame(self.settings_tab, text="Data File Settings")
-        file_frame.pack(fill=tk.X, pady=10)
+        send_note_on = ttk.Button(note_buttons_frame, text="Note On", command=self.send_note_on)
+        send_note_on.pack(side=tk.LEFT, padx=(0, 5))
         
-        ttk.Label(file_frame, text="Choose where to save weather data:").pack(anchor="w", pady=(10, 5), padx=10)
+        send_note_off = ttk.Button(note_buttons_frame, text="Note Off", command=self.send_note_off)
+        send_note_off.pack(side=tk.LEFT, padx=5)
         
-        # File location info
-        file_info_frame = ttk.Frame(file_frame)
-        file_info_frame.pack(fill=tk.X, padx=10, pady=5)
+        # CC Controls
+        cc_frame = ttk.Frame(controls_frame)
+        cc_frame.pack(fill=tk.X, pady=10, padx=10)
         
-        self.file_path_label = ttk.Label(file_info_frame, text=os.path.abspath(self.weather_file), style="Path.TLabel")
-        self.file_path_label.pack(fill=tk.X, expand=True, anchor="w", pady=5)
+        ttk.Label(cc_frame, text="CC Controls", style="Info.TLabel").grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 10))
         
-        # Migration option
-        migration_frame = ttk.Frame(file_frame)
-        migration_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        # CC Number Control
+        ttk.Label(cc_frame, text="CC Number:").grid(row=1, column=0, sticky=tk.W, padx=5)
         
-        self.migrate_var = tk.BooleanVar(value=True)
-        migrate_check = ttk.Checkbutton(
-            migration_frame, 
-            text="Copy existing data to the new file location", 
-            variable=self.migrate_var
-        )
-        migrate_check.pack(side=tk.LEFT)
+        self.cc_var = tk.IntVar(value=1)
+        cc_spin = ttk.Spinbox(cc_frame, from_=0, to=127, textvariable=self.cc_var, width=5)
+        cc_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
         
-        # Save file settings button
-        file_buttons_frame = ttk.Frame(file_frame)
-        file_buttons_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        # CC Value Control
+        ttk.Label(cc_frame, text="CC Value:").grid(row=1, column=2, sticky=tk.W, padx=5)
         
-        browse_btn = ttk.Button(file_buttons_frame, text="Browse...", command=self.browse_file, width=10)
-        browse_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.cc_value_var = tk.IntVar(value=64)
+        cc_value_spin = ttk.Spinbox(cc_frame, from_=0, to=127, textvariable=self.cc_value_var, width=5)
+        cc_value_spin.grid(row=1, column=3, sticky=tk.W, padx=5)
         
-        self.save_file_btn = ttk.Button(file_buttons_frame, text="Save", command=self.save_file_settings, width=10)
-        self.save_file_btn.pack(side=tk.LEFT)
-    
-    def browse_file(self):
-        """Open a dialog to choose where to save the CSV file, including filename"""
-        # Get the current directory and filename
-        current_dir = os.path.dirname(os.path.abspath(self.weather_file))
-        current_filename = os.path.basename(self.weather_file)
+        # Value Slider
+        self.cc_slider = ttk.Scale(cc_frame, from_=0, to=127, orient="horizontal", variable=self.cc_value_var)
+        self.cc_slider.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), padx=5, pady=5)
         
-        # Ask for file path with dialog
-        filetypes = [("CSV files", "*.csv"), ("All files", "*.*")]
-        new_file_path = filedialog.asksaveasfilename(
-            initialdir=current_dir,
-            initialfile=current_filename,
-            title="Select CSV file location",
-            filetypes=filetypes,
-            defaultextension=".csv"
-        )
+        # Send CC Button
+        send_cc_btn = ttk.Button(cc_frame, text="Send CC", command=self.send_cc)
+        send_cc_btn.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
         
-        # If user cancels, new_path will be empty
-        if new_file_path:
-            # Normalize the path and ensure it has .csv extension
-            new_file_path = os.path.normpath(new_file_path)
-            if not new_file_path.lower().endswith('.csv'):
-                new_file_path += '.csv'
-                
-            # Update the file path label
-            self.file_path_label.config(text=new_file_path)
-    
-    def save_file_settings(self):
-        """Save the file path settings"""
-        # Get the full file path from the label
-        new_file_path = self.file_path_label.cget("text")
+        # Preset management
+        preset_frame = ttk.LabelFrame(self.midi_tab, text="Presets")
+        preset_frame.pack(fill=tk.X, pady=10)
         
-        # Ensure it's a CSV file
-        if not new_file_path.lower().endswith('.csv'):
-            messagebox.showerror("Error", "File must be a CSV file")
-            return
+        preset_controls = ttk.Frame(preset_frame)
+        preset_controls.pack(fill=tk.X, pady=10, padx=10)
         
-        # Check if it's different from the current path
-        if new_file_path != os.path.abspath(self.weather_file):
-            # Check if should migrate data
-            migrate = self.migrate_var.get()
+        # Preset Name
+        ttk.Label(preset_controls, text="Name:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.preset_name_var = tk.StringVar()
+        preset_name_entry = ttk.Entry(preset_controls, textvariable=self.preset_name_var)
+        preset_name_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # Preset buttons
+        save_preset_btn = ttk.Button(preset_controls, text="Save Preset", command=self.save_preset)
+        save_preset_btn.grid(row=0, column=2, padx=5, pady=5)
+        
+        # Preset list
+        preset_list_frame = ttk.Frame(preset_frame)
+        preset_list_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        self.preset_listbox = tk.Listbox(preset_list_frame, height=4)
+        self.preset_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        preset_scrollbar = ttk.Scrollbar(preset_list_frame, orient="vertical", command=self.preset_listbox.yview)
+        preset_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.preset_listbox.config(yscrollcommand=preset_scrollbar.set)
+        self.preset_listbox.bind("<Double-1>", self.load_selected_preset)
+        
+        # Load preset button
+        preset_buttons_frame = ttk.Frame(preset_frame)
+        preset_buttons_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        load_preset_btn = ttk.Button(preset_buttons_frame, text="Load Preset", command=self.load_preset)
+        load_preset_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        delete_preset_btn = ttk.Button(preset_buttons_frame, text="Delete Preset", command=self.delete_preset)
+        delete_preset_btn.pack(side=tk.LEFT)
+        
+        # MIDI Status
+        self.midi_status = ttk.Label(self.midi_tab, text="MIDI Status: Not connected", foreground="red")
+        self.midi_status.pack(pady=10)
+        
+        # Populate with available MIDI ports
+        self.refresh_midi_ports()
+        self.refresh_preset_list()
+
+    def init_midi(self):
+        """Initialize MIDI output"""
+        if MIDI_LIBRARY == "rtmidi":
+            try:
+                self.midi_outputs["rtmidi"] = rtmidi.MidiOut()
+                self.refresh_midi_ports()
+            except Exception as e:
+                print(f"Error initializing MIDI: {e}")
+        elif MIDI_LIBRARY == "mido":
+            try:
+                self.refresh_midi_ports()
+            except Exception as e:
+                print(f"Error initializing MIDI: {e}")
             
-            # Remember the old file path
-            old_file_path = self.weather_file
-            
-            # Update the file path
-            self.weather_file = new_file_path
-            
-            # Update config
-            self.save_config()
-            
-            # If migration is requested and the old file exists, copy the data
-            if migrate and os.path.exists(old_file_path):
-                try:
-                    # Create directory if it doesn't exist
-                    os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
-                    
-                    # Copy the file
-                    shutil.copy2(old_file_path, new_file_path)
-                    messagebox.showinfo("Success", f"Weather data file location updated and data migrated.\nNew location: {new_file_path}")
-                    self.status_label.config(text="Data file location updated with migration")
-                except Exception as e:
-                    messagebox.showerror("Migration Error", f"Error copying data: {str(e)}\nData file location updated but data was not transferred.")
-                    self.status_label.config(text="Data file location updated but migration failed")
-            else:
-                messagebox.showinfo("Success", f"Weather data file location updated.\nNew location: {new_file_path}")
-                self.status_label.config(text="Data file location updated")
-            
-            # Update the CSV path in the weather tab
-            self.csv_path.config(text=os.path.abspath(new_file_path))
+    def refresh_midi_ports(self):
+        """Refresh the list of available MIDI ports"""
+        ports = []
+        
+        if MIDI_LIBRARY == "rtmidi":
+            try:
+                ports = self.midi_outputs["rtmidi"].get_ports()
+            except Exception as e:
+                print(f"Error getting MIDI ports: {e}")
+        elif MIDI_LIBRARY == "mido":
+            try:
+                ports = mido.get_output_names()
+            except Exception as e:
+                print(f"Error getting MIDI ports: {e}")
+        
+        if ports:
+            self.port_dropdown['values'] = ports
+            self.port_var.set(ports[0] if ports else "No MIDI ports available")
+            self.port_dropdown.config(state="readonly")
+            self.on_port_selected()
         else:
-            messagebox.showinfo("Info", "File location is unchanged")
-    
+            self.port_dropdown['values'] = ["No MIDI ports available"]
+            self.port_var.set("No MIDI ports available")
+            self.port_dropdown.config(state="disabled")
+            self.midi_status.config(text="MIDI Status: No ports available", foreground="red")
+            
+    def on_port_selected(self, event=None):
+        """Handle MIDI port selection"""
+        selected_port = self.port_var.get()
+        
+        if selected_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: No ports available", foreground="red")
+            return
+            
+        try:
+            if MIDI_LIBRARY == "rtmidi":
+                # Close existing connection if any
+                if self.current_midi_port is not None:
+                    self.midi_outputs["rtmidi"].close_port()
+                
+                # Open the selected port
+                port_index = self.port_dropdown['values'].index(selected_port)
+                self.midi_outputs["rtmidi"].open_port(port_index)
+                self.current_midi_port = port_index
+                self.midi_status.config(text=f"MIDI Status: Connected to {selected_port}", foreground="green")
+                
+            elif MIDI_LIBRARY == "mido":
+                self.current_midi_port = selected_port
+                self.midi_status.config(text=f"MIDI Status: Ready to use {selected_port}", foreground="green")
+                
+        except Exception as e:
+            self.midi_status.config(text=f"MIDI Error: {str(e)}", foreground="red")
+            
+    def on_channel_selected(self, event=None):
+        """Handle MIDI channel selection"""
+        self.midi_channel = self.channel_var.get()
+            
+    def send_note_on(self):
+        """Send MIDI Note On message"""
+        if not self.current_midi_port or self.current_midi_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: Not connected", foreground="red")
+            return
+            
+        note = self.note_var.get()
+        velocity = self.velocity_var.get()
+        channel = self.midi_channel - 1  # MIDI channels are 0-15 internally
+        
+        try:
+            if MIDI_LIBRARY == "rtmidi":
+                note_on = [0x90 + channel, note, velocity]  # Note On is 0x90 + channel
+                self.midi_outputs["rtmidi"].send_message(note_on)
+            elif MIDI_LIBRARY == "mido":
+                with mido.open_output(self.current_midi_port) as port:
+                    port.send(mido.Message('note_on', note=note, velocity=velocity, channel=channel))
+                    
+            self.midi_status.config(text=f"MIDI Status: Sent Note On {note} with velocity {velocity}", foreground="green")
+        except Exception as e:
+            self.midi_status.config(text=f"MIDI Error: {str(e)}", foreground="red")
+            
+    def send_note_off(self):
+        """Send MIDI Note Off message"""
+        if not self.current_midi_port or self.current_midi_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: Not connected", foreground="red")
+            return
+            
+        note = self.note_var.get()
+        channel = self.midi_channel - 1  # MIDI channels are 0-15 internally
+        
+        try:
+            if MIDI_LIBRARY == "rtmidi":
+                note_off = [0x80 + channel, note, 0]  # Note Off is 0x80 + channel
+                self.midi_outputs["rtmidi"].send_message(note_off)
+            elif MIDI_LIBRARY == "mido":
+                with mido.open_output(self.current_midi_port) as port:
+                    port.send(mido.Message('note_off', note=note, velocity=0, channel=channel))
+                    
+            self.midi_status.config(text=f"MIDI Status: Sent Note Off {note}", foreground="green")
+        except Exception as e:
+            self.midi_status.config(text=f"MIDI Error: {str(e)}", foreground="red")
+            
+    def send_cc(self):
+        """Send MIDI CC message"""
+        if not self.current_midi_port or self.current_midi_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: Not connected", foreground="red")
+            return
+            
+        cc_num = self.cc_var.get()
+        cc_val = self.cc_value_var.get()
+        channel = self.midi_channel - 1  # MIDI channels are 0-15 internally
+        
+        try:
+            if MIDI_LIBRARY == "rtmidi":
+                cc_msg = [0xB0 + channel, cc_num, cc_val]  # CC is 0xB0 + channel
+                self.midi_outputs["rtmidi"].send_message(cc_msg)
+            elif MIDI_LIBRARY == "mido":
+                with mido.open_output(self.current_midi_port) as port:
+                    port.send(mido.Message('control_change', control=cc_num, value=cc_val, channel=channel))
+                    
+            self.midi_status.config(text=f"MIDI Status: Sent CC {cc_num} with value {cc_val}", foreground="green")
+        except Exception as e:
+            self.midi_status.config(text=f"MIDI Error: {str(e)}", foreground="red")
+
+    def save_preset(self):
+        """Save current MIDI settings as a preset"""
+        name = self.preset_name_var.get()
+        if not name:
+            # Generate a default name if none provided
+            name = f"Preset {len(self.midi_presets) + 1}"
+            self.preset_name_var.set(name)
+            
+        preset = {
+            'name': name,
+            'channel': self.midi_channel,
+            'note': self.note_var.get(),
+            'velocity': self.velocity_var.get(),
+            'cc': self.cc_var.get(),
+            'cc_value': self.cc_value_var.get()
+        }
+        
+        # Check if preset with this name exists and update it, or add new
+        for i, p in enumerate(self.midi_presets):
+            if p['name'] == name:
+                self.midi_presets[i] = preset
+                break
+        else:
+            self.midi_presets.append(preset)
+            
+        self.save_midi_config()
+        self.refresh_preset_list()
+        self.midi_status.config(text=f"MIDI Status: Preset '{name}' saved", foreground="green")
+
+    def load_preset(self):
+        """Load selected preset"""
+        selected = self.preset_listbox.curselection()
+        if not selected:
+            return
+            
+        index = selected[0]
+        if 0 <= index < len(self.midi_presets):
+            self._apply_preset(self.midi_presets[index])
+            
+    def load_selected_preset(self, event=None):
+        """Load preset when double-clicked in the listbox"""
+        self.load_preset()
+            
+    def _apply_preset(self, preset):
+        """Apply preset values to the UI"""
+        self.preset_name_var.set(preset['name'])
+        self.channel_var.set(preset['channel'])
+        self.midi_channel = preset['channel']
+        self.note_var.set(preset['note'])
+        self.velocity_var.set(preset['velocity'])
+        self.cc_var.set(preset['cc'])
+        self.cc_value_var.set(preset['cc_value'])
+        self.midi_status.config(text=f"MIDI Status: Loaded preset '{preset['name']}'", foreground="green")
+            
+    def delete_preset(self):
+        """Delete selected preset"""
+        selected = self.preset_listbox.curselection()
+        if not selected:
+            return
+            
+        index = selected[0]
+        if 0 <= index < len(self.midi_presets):
+            preset_name = self.midi_presets[index]['name']
+            del self.midi_presets[index]
+            self.save_midi_config()
+            self.refresh_preset_list()
+            self.midi_status.config(text=f"MIDI Status: Preset '{preset_name}' deleted", foreground="green")
+            
+    def refresh_preset_list(self):
+        """Update the preset listbox"""
+        self.preset_listbox.delete(0, tk.END)
+        for preset in self.midi_presets:
+            self.preset_listbox.insert(tk.END, preset['name'])
+            
+    def load_midi_config(self):
+        """Load MIDI presets from JSON file"""
+        try:
+            if os.path.exists(DEFAULT_MIDI_CONFIG):
+                with open(DEFAULT_MIDI_CONFIG, 'r') as f:
+                    data = json.load(f)
+                    self.midi_presets = data.get('presets', [])
+                    self.midi_channel = data.get('last_channel', 1)
+        except Exception as e:
+            print(f"Error loading MIDI config: {e}")
+            self.midi_presets = []
+            
+    def save_midi_config(self):
+        """Save MIDI presets to JSON file"""
+        try:
+            data = {
+                'presets': self.midi_presets,
+                'last_channel': self.midi_channel
+            }
+            with open(DEFAULT_MIDI_CONFIG, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Error saving MIDI config: {e}")
+            
     def toggle_api_key_visibility(self):
         """Toggle API key visibility"""
         if self.api_key_entry['show'] == '*':
@@ -821,10 +1049,114 @@ class WeatherApp:
     def on_closing(self):
         """Cleanup when closing the application"""
         self.running = False
+        
+        # Close MIDI connection if open
+        if MIDI_LIBRARY == "rtmidi" and self.current_midi_port is not None:
+            try:
+                self.midi_outputs["rtmidi"].close_port()
+            except:
+                pass
+        
         self.root.destroy()
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = WeatherApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    root.mainloop()
+    def create_settings_tab(self):
+        """Create the settings tab UI"""
+        # API Settings Section
+        api_frame = ttk.LabelFrame(self.settings_tab, text="API Settings")
+        api_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(api_frame, text="Enter your OpenWeatherMap API Key:").pack(anchor="w", pady=(10, 5), padx=10)
+        
+        api_key_frame = ttk.Frame(api_frame)
+        api_key_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.api_key_entry = ttk.Entry(api_key_frame, width=40, show="*")
+        self.api_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        if self.api_key:
+            self.api_key_entry.insert(0, self.api_key)
+        
+        self.show_key_btn = ttk.Button(api_key_frame, text="Show", width=5, command=self.toggle_api_key_visibility)
+        self.show_key_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Save API key button
+        save_api_frame = ttk.Frame(api_frame)
+        save_api_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
+        
+        self.save_api_btn = ttk.Button(save_api_frame, text="Save API Key", command=self.save_api_key, width=15)
+        self.save_api_btn.pack(side=tk.RIGHT)
+        
+        # Get API key info
+        ttk.Label(api_frame, text="Don't have an API key?").pack(anchor="w", pady=(5, 2), padx=10)
+        
+        api_link = ttk.Label(
+            api_frame,
+            text="Get one for free at OpenWeatherMap.org",
+            foreground="blue",
+            cursor="hand2"
+        )
+        api_link.pack(anchor="w", padx=10, pady=(0, 10))
+        api_link.bind("<Button-1>", lambda e: webbrowser.open("https://openweathermap.org/api"))
+        
+        # Update Interval Section
+        interval_frame = ttk.LabelFrame(self.settings_tab, text="Update Interval")
+        interval_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(interval_frame, text="Set how often to fetch new weather data:").pack(anchor="w", pady=(10, 5), padx=10)
+        
+        interval_setting_frame = ttk.Frame(interval_frame)
+        interval_setting_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        current_interval = self.update_interval // 60  # Convert to minutes
+        
+        self.interval_var = tk.IntVar(value=current_interval)
+        interval_scale = ttk.Scale(
+            interval_setting_frame, 
+            from_=1, 
+            to=60, 
+            variable=self.interval_var,
+            orient="horizontal",
+            command=self.update_interval_display
+        )
+        interval_scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        self.interval_display = ttk.Label(interval_setting_frame, text=f"{current_interval} min")
+        self.interval_display.pack(side=tk.LEFT, padx=(10, 0))
+        
+        self.save_interval_btn = ttk.Button(interval_frame, text="Save Interval", command=self.save_interval, width=15)
+        self.save_interval_btn.pack(side=tk.RIGHT, padx=10, pady=(0, 10))
+        
+        # File Settings Section
+        file_frame = ttk.LabelFrame(self.settings_tab, text="Data File Settings")
+        file_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(file_frame, text="Choose where to save weather data:").pack(anchor="w", pady=(10, 5), padx=10)
+        
+        # File location info
+        file_info_frame = ttk.Frame(file_frame)
+        file_info_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.file_path_label = ttk.Label(file_info_frame, text=os.path.abspath(self.weather_file), style="Path.TLabel")
+        self.file_path_label.pack(fill=tk.X, expand=True, anchor="w", pady=5)
+        
+        # Migration option
+        migration_frame = ttk.Frame(file_frame)
+        migration_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        
+        self.migrate_var = tk.BooleanVar(value=True)
+        migrate_check = ttk.Checkbutton(
+            migration_frame, 
+            text="Copy existing data to the new file location", 
+            variable=self.migrate_var
+        )
+        migrate_check.pack(side=tk.LEFT)
+        
+        # Save file settings button
+        file_buttons_frame = ttk.Frame(file_frame)
+        file_buttons_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        browse_btn = ttk.Button(file_buttons_frame, text="Browse...", command=self.browse_file, width=10)
+        browse_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.save_file_btn = ttk.Button(file_buttons_frame, text="Save", command=self.save_file_settings, width=10)
+        self.save_file_btn.pack(side=tk.LEFT)
