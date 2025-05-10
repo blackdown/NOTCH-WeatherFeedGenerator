@@ -3,17 +3,22 @@ MIDI functionality module for NOTCH Data Tool
 """
 import os
 import json
+import time
+import sys
 
 # Try importing MIDI libraries with fallbacks
 try:
     import rtmidi
     MIDI_LIBRARY = "rtmidi"
+    print(f"Using rtmidi library - version: {rtmidi.get_compiled_api()}")
 except ImportError:
     try:
         import mido
         MIDI_LIBRARY = "mido"
+        print(f"Using mido library")
     except ImportError:
         MIDI_LIBRARY = None
+        print("Warning: No MIDI library found. Install python-rtmidi or mido to use MIDI features.")
 
 
 def init_midi():
@@ -22,12 +27,36 @@ def init_midi():
     
     if MIDI_LIBRARY == "rtmidi":
         try:
+            # Try to enumerate APIs first to ensure proper initialization
+            apis = rtmidi.get_compiled_api()
+            print(f"Available MIDI APIs: {apis}")
+            
+            # Initialize the MidiOut object with the first available API
             midi_outputs["rtmidi"] = rtmidi.MidiOut()
+            
+            # Check for ports immediately to ensure the interface is working
+            ports = midi_outputs["rtmidi"].get_ports()
+            print(f"MIDI ports detected during initialization: {len(ports)}")
+            if len(ports) > 0:
+                print(f"First port: {ports[0]}")
         except Exception as e:
             print(f"Error initializing MIDI: {e}")
+            if hasattr(e, "__traceback__"):
+                import traceback
+                traceback.print_tb(e.__traceback__)
     elif MIDI_LIBRARY == "mido":
-        # mido doesn't need initialization here
-        pass
+        try:
+            # Check backends
+            backends = mido.backend.get_api()
+            print(f"Available MIDI backends: {backends}")
+            
+            # Initialize mido (no explicit initialization needed)
+            ports = mido.get_output_names()
+            print(f"MIDI ports detected during initialization: {len(ports)}")
+            if len(ports) > 0:
+                print(f"First port: {ports[0]}")
+        except Exception as e:
+            print(f"Error initializing MIDI with mido: {e}")
     
     return midi_outputs
 
@@ -37,15 +66,59 @@ def get_midi_ports():
     
     if MIDI_LIBRARY == "rtmidi":
         try:
+            # Create a fresh instance to get the latest port list
             midi_out = rtmidi.MidiOut()
             ports = midi_out.get_ports()
+            print(f"rtmidi detected {len(ports)} ports: {ports}")
+            
+            # If no ports found, try reinitializing with different APIs
+            if not ports:
+                apis = rtmidi.get_compiled_api()
+                for api in apis:
+                    try:
+                        alt_midi = rtmidi.MidiOut(api)
+                        alt_ports = alt_midi.get_ports()
+                        if alt_ports:
+                            print(f"Found ports using alternate API {api}: {alt_ports}")
+                            ports = alt_ports
+                            break
+                    except:
+                        pass
         except Exception as e:
-            print(f"Error getting MIDI ports: {e}")
+            print(f"Error getting MIDI ports with rtmidi: {e}")
     elif MIDI_LIBRARY == "mido":
         try:
-            ports = mido.get_output_names()
+            # Try multiple backends if available
+            backends = mido.backend.get_api()
+            for backend in backends:
+                try:
+                    mido.set_backend(backend)
+                    ports = mido.get_output_names()
+                    print(f"mido ({backend}) detected {len(ports)} ports: {ports}")
+                    if ports:
+                        break
+                except:
+                    pass
+            
+            # If still no ports, try the default backend again
+            if not ports:
+                mido.set_backend('mido.backends.rtmidi')  # Try explicit backend
+                ports = mido.get_output_names()
         except Exception as e:
-            print(f"Error getting MIDI ports: {e}")
+            print(f"Error getting MIDI ports with mido: {e}")
+    
+    # If still no ports but we have a MIDI library, try checking with system commands
+    if not ports and MIDI_LIBRARY and os.name == 'nt':  # Windows
+        try:
+            print("Attempting system MIDI port detection...")
+            import subprocess
+            result = subprocess.run(['powershell', '-Command', "Get-WmiObject Win32_PnPEntity | Where-Object{$_.Name -match 'MIDI'} | Select-Object Name"], capture_output=True, text=True)
+            lines = result.stdout.strip().split('\n')
+            for line in lines:
+                if line.strip() and not line.startswith("Name"):
+                    print(f"System detected MIDI device: {line.strip()}")
+        except Exception as e:
+            print(f"Error with system MIDI detection: {e}")
     
     return ports
 
