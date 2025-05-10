@@ -42,14 +42,20 @@ class NOTCHDataTool:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
         
-        # Create tabs
+        # Create basic tab frames first
         self.weather_tab_frame = ttk.Frame(self.notebook, padding="20")
         self.midi_tab_frame = ttk.Frame(self.notebook, padding="20")
         self.settings_tab_frame = ttk.Frame(self.notebook, padding="20")
         
+        # Add frames to notebook
         self.notebook.add(self.weather_tab_frame, text="Weather > CSV")
         self.notebook.add(self.midi_tab_frame, text="MIDI")
         self.notebook.add(self.settings_tab_frame, text="Settings")
+        
+        # Now set up scrollable content inside each tab
+        self.weather_content = self.create_scrollable_area(self.weather_tab_frame)
+        self.midi_content = self.create_scrollable_area(self.midi_tab_frame)
+        self.settings_content = self.create_scrollable_area(self.settings_tab_frame)
         
         # Create status bar
         self.create_status_bar()
@@ -75,6 +81,87 @@ class NOTCHDataTool:
             self.status_label.config(text="Please set your API key to start")
             self.notebook.select(self.settings_tab_frame)  # Switch to settings tab
 
+    def create_scrollable_area(self, parent):
+        """Create a scrollable area inside the given parent frame"""
+        # Create canvas
+        canvas = tk.Canvas(parent, highlightthickness=0)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar to frame but don't pack it yet
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        
+        # Configure canvas
+        canvas.configure(yscrollcommand=self._on_scrollbar_set(scrollbar))
+        
+        # Create frame inside canvas
+        scrollable_frame = ttk.Frame(canvas)
+        
+        # Add frame to canvas window
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        
+        # Update scroll region when frame size changes
+        def configure_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            # Adjust width of frame to match canvas
+            canvas.itemconfig(window_id, width=canvas.winfo_width())
+            # Check if scrollbar is needed
+            self._check_scrollbar_needed(canvas, scrollbar)
+        
+        scrollable_frame.bind("<Configure>", configure_scroll_region)
+        canvas.bind("<Configure>", lambda e: (canvas.itemconfig(window_id, width=e.width), 
+                                              self._check_scrollbar_needed(canvas, scrollbar)))
+        
+        # Configure scrolling with mouse wheel - only when scrollbar is visible
+        def _on_mousewheel(event):
+            # Only scroll if scrollbar is visible (content overflows)
+            if scrollbar.winfo_viewable():
+                canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            
+        # Bind mousewheel to the canvas
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        
+        return scrollable_frame
+        
+    def _on_scrollbar_set(self, scrollbar):
+        """Custom scrollbar set function that shows/hides scrollbar as needed"""
+        def wrapped(first, last):
+            # Normal scrollbar behavior
+            scrollbar.set(first, last)
+            
+            # Show scrollbar only when needed (when not seeing the full content)
+            if float(first) <= 0.0 and float(last) >= 1.0:
+                scrollbar.pack_forget()
+            else:
+                # Check if already packed to avoid error
+                if not scrollbar.winfo_ismapped():
+                    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+                    
+        return wrapped
+        
+    def _check_scrollbar_needed(self, canvas, scrollbar):
+        """Check if the scrollbar is needed based on content height vs canvas height"""
+        # Get canvas dimensions
+        canvas_height = canvas.winfo_height()
+        
+        # Get scroll region dimensions
+        scrollregion = canvas.cget("scrollregion").split()
+        if not scrollregion or len(scrollregion) < 4:
+            return
+            
+        # Calculate content height
+        try:
+            content_height = int(float(scrollregion[3]) - float(scrollregion[1]))
+            
+            # Show/hide scrollbar based on content vs. canvas height
+            if content_height <= canvas_height:
+                scrollbar.pack_forget()
+            else:
+                if not scrollbar.winfo_ismapped():
+                    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        except (ValueError, IndexError):
+            pass
+
     def setup_styles(self):
         """Configure application styles"""
         style = ttk.Style()
@@ -88,6 +175,24 @@ class NOTCHDataTool:
         style.configure("Link.TLabel", font=("Arial", 10), foreground="blue")
         style.configure("Path.TLabel", font=("Arial", 8), foreground="gray")
         style.configure("MIDI.TButton", background="#2E8B57", foreground="white")
+        
+        # Remove black outline on selection for various elements
+        style.map('TCombobox', fieldbackground=[('readonly', '#f0f0f0')])
+        style.map('TEntry', fieldbackground=[('focus', '#f0f0f0')])
+        style.map('TCombobox', selectbackground=[('readonly', '#0078d7')])
+        style.map('TEntry', selectbackground=[('focus', '#0078d7')])
+        style.map('TCombobox', selectforeground=[('readonly', 'white')])
+        style.map('TEntry', selectforeground=[('focus', 'white')])
+        
+        # Fix the outline for Treeview selection
+        style.map('Treeview', 
+                  background=[('selected', '#0078d7')],
+                  foreground=[('selected', 'white')])
+        
+        # Fix Listbox selection
+        self.root.option_add('*TCombobox*Listbox.background', '#f0f0f0')
+        self.root.option_add('*TCombobox*Listbox.selectBackground', '#0078d7')
+        self.root.option_add('*TCombobox*Listbox.selectForeground', 'white')
 
     def create_status_bar(self):
         """Create the status bar for the application"""

@@ -8,7 +8,7 @@ class MidiTab:
     def __init__(self, app):
         """Initialize the MIDI tab with the main application reference"""
         self.app = app
-        self.tab = app.midi_tab_frame
+        self.tab = app.midi_content  # Use the scrollable content area instead of the direct frame
         
         # Create the MIDI Tab UI
         self.create_midi_tab()
@@ -17,7 +17,11 @@ class MidiTab:
         """Create the MIDI tab UI"""
         # Title
         title_label = ttk.Label(self.tab, text="MIDI Controller", style="Header.TLabel")
-        title_label.pack(pady=(0, 20))
+        title_label.pack(pady=(0, 10))
+        
+        # MIDI Status - moved to the top under the title
+        self.midi_status = ttk.Label(self.tab, text="MIDI Status: Not connected", foreground="red")
+        self.midi_status.pack(pady=(0, 20))
         
         # MIDI Port Selection - Enhanced with better visual emphasis
         port_frame = ttk.LabelFrame(self.tab, text="MIDI Output")
@@ -171,10 +175,6 @@ class MidiTab:
         
         delete_preset_btn = ttk.Button(preset_buttons_frame, text="Delete Preset", command=self.delete_preset)
         delete_preset_btn.pack(side=tk.LEFT)
-        
-        # MIDI Status
-        self.midi_status = ttk.Label(self.tab, text="MIDI Status: Not connected", foreground="red")
-        self.midi_status.pack(pady=10)
         
         # Populate with available MIDI ports
         self.refresh_midi_ports()

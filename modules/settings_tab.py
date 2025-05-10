@@ -10,7 +10,7 @@ class SettingsTab:
     def __init__(self, app):
         """Initialize the Settings tab with the main application reference"""
         self.app = app
-        self.tab = app.settings_tab_frame
+        self.tab = app.settings_content  # Use the scrollable content area instead of the direct frame
         
         # Create the Settings Tab UI
         self.create_settings_tab()

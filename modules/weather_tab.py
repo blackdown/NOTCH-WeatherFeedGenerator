@@ -14,7 +14,7 @@ class WeatherTab:
     def __init__(self, app):
         """Initialize the Weather tab with the main application reference"""
         self.app = app
-        self.tab = app.weather_tab_frame
+        self.tab = app.weather_content  # Use the scrollable content area instead of the direct frame
         
         # Create the Weather Tab UI
         self.create_weather_tab()
