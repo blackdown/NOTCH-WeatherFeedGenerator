@@ -2,8 +2,9 @@ import os
 import sys
 import subprocess
 import pkg_resources
+import platform
 
-required_packages = {'pyinstaller', 'requests'}
+required_packages = {'pyinstaller', 'requests', 'python-rtmidi'}
 
 def install_requirements():
     """Install required packages if they're not already installed"""
@@ -19,6 +20,38 @@ def install_requirements():
             print(f"Error installing packages: {e}")
             return False
     return True
+
+def find_pyinstaller():
+    """Find the PyInstaller executable in the Python scripts directory"""
+    # Check if PyInstaller is directly accessible in PATH
+    try:
+        subprocess.run(['pyinstaller', '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return 'pyinstaller'
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+        
+    # Try to find it in the Scripts directory
+    if platform.system() == 'Windows':
+        # First check the common locations
+        possible_paths = [
+            os.path.join(sys.prefix, 'Scripts', 'pyinstaller.exe'),
+            os.path.join(sys.prefix, 'Scripts', 'pyinstaller'),
+            # For Windows Store Python
+            os.path.join(os.path.dirname(sys.executable), 'Scripts', 'pyinstaller.exe')
+        ]
+        
+        # Add the warning path we received
+        warning_path = r'C:\Users\ab\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\Scripts\pyinstaller.exe'
+        possible_paths.append(warning_path)
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                print(f"Found PyInstaller at: {path}")
+                return path
+    
+    print("Warning: PyInstaller not found in PATH or Scripts directory.")
+    print("Falling back to module execution method.")
+    return [sys.executable, '-m', 'PyInstaller']
 
 def build_executable():
     """Build the executable using PyInstaller"""
@@ -50,14 +83,32 @@ def build_executable():
                 print("Pillow not installed, skipping icon creation")
                 pass  # Skip icon creation if Pillow is not installed
         
-        # Run PyInstaller
-        command = [
-            'pyinstaller',
-            '--onefile',
-            '--windowed',
-            '--name=NOTCH-WeatherController',
-            '--add-data=readme.md;.',
-        ]
+        # Find PyInstaller executable
+        pyinstaller_cmd = find_pyinstaller()
+        
+        # Build command arguments
+        if isinstance(pyinstaller_cmd, list):
+            command = pyinstaller_cmd + [
+                '--onefile',
+                '--windowed',
+                '--name=NOTCH Data Tool',  # Updated name to match spec file
+                '--add-data=readme.md;.',
+            ]
+        else:
+            command = [
+                pyinstaller_cmd,
+                '--onefile',
+                '--windowed',
+                '--name=NOTCH Data Tool',  # Updated name to match spec file
+                '--add-data=readme.md;.',
+            ]
+            
+        # Add modules directory
+        if os.path.exists('modules'):
+            if platform.system() == 'Windows':
+                command.append('--add-data=modules/*.py;modules')
+            else:
+                command.append('--add-data=modules/*.py:modules')
         
         # Add icon if it exists
         if os.path.exists('weather.ico'):
@@ -65,10 +116,25 @@ def build_executable():
             
         # Include weather.csv if it exists
         if os.path.exists('weather.csv'):
-            command.append('--add-data=weather.csv;.')
+            if platform.system() == 'Windows':
+                command.append('--add-data=weather.csv;.')
+            else:
+                command.append('--add-data=weather.csv:.')
+                
+        # Add hidden imports
+        command.extend([
+            '--hidden-import=modules.app', 
+            '--hidden-import=modules.config',
+            '--hidden-import=modules.midi',
+            '--hidden-import=modules.weather_tab',
+            '--hidden-import=modules.settings_tab',
+            '--hidden-import=modules.midi_tab'
+        ])
         
-        command.append('weather_app.py')
+        # Update to use the new main file
+        command.append('notch_data_tool.py')  # Using the new entry point
         
+        print(f"Running command: {' '.join(command)}")
         subprocess.check_call(command)
         print("\nBuild completed successfully!")
         print("Executable can be found in the 'dist' folder.")
@@ -79,7 +145,7 @@ def build_executable():
         return False
 
 if __name__ == "__main__":
-    print("===== NOTCH Weather Controller Builder =====")
+    print("===== NOTCH Data Tool Builder =====")  # Updated name
     
     if install_requirements():
         build_executable()
