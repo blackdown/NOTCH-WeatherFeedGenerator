@@ -2,14 +2,17 @@
 
 A Python application that fetches weather data and generates MIDI control data for integration with NOTCH and other MIDI-compatible applications.
 
-## Version 1.0.0
+## Version 1.1.0
 
-The first stable release of the NOTCH Data Tool includes complete weather monitoring functionality and a new MIDI control interface for integration with NOTCH and other MIDI-compatible applications.
+This release includes complete weather monitoring functionality, an enhanced MIDI control interface with improved error handling, and virtual MIDI support for integration with NOTCH and other MIDI-compatible applications.
 
 ### What's Included
 
 - **Weather Data Integration**: Fetch and display current weather conditions including temperature, weather description, and detailed metrics
-- **MIDI Control Interface**: Send MIDI notes and CC messages to control external applications
+- **Enhanced MIDI Control Interface**: Send MIDI notes and CC messages to control external applications
+- **Improved MIDI Error Handling**: Better handling of DLL errors and missing drivers
+- **Virtual MIDI Support**: Integration with loopMIDI for reliable MIDI connectivity
+- **Audio Interface Compatibility Mode**: Better detection of MIDI-capable audio interfaces
 - **Preset Management**: Save and recall your favorite MIDI settings
 - **Dual Interface Options**: Choose between a GUI application or command-line interface
 - **Data Persistence**: Automatic CSV logging for integration with NOTCH
@@ -27,6 +30,19 @@ The first stable release of the NOTCH Data Tool includes complete weather monito
 Pre-built executable available in the releases section, or follow the setup instructions below for development use.
 
 ## Features
+
+### MIDI Connectivity
+
+The NOTCH Data Tool provides robust MIDI connectivity options:
+
+- **Hardware MIDI devices**: Connect to MIDI interfaces and controllers
+- **Audio interfaces**: Better detection of MIDI capabilities in audio interfaces
+- **Virtual MIDI**: Support for loopMIDI virtual MIDI ports
+- **Troubleshooting tools**: Advanced options for resolving MIDI connectivity issues
+
+For MIDI connection troubleshooting, see:
+- [MIDI Troubleshooting Guide](MIDI_TROUBLESHOOTING.md)
+- [Setting up loopMIDI](LOOPMIDI_SETUP.md)
 
 ### Weather Monitoring
 - Retrieves current weather conditions including temperature, weather description, and wind information

@@ -1,0 +1,601 @@
+"""
+MIDI tab functionality for NOTCH Data Tool
+"""
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+class MidiTab:
+    def __init__(self, app):
+        """Initialize the MIDI tab with the main application reference"""
+        self.app = app
+        self.tab = app.midi_content  # Use the scrollable content area instead of the direct frame
+        
+        # Create the MIDI Tab UI
+        self.create_midi_tab()
+        
+    def create_midi_tab(self):
+        """Create the MIDI tab UI"""
+        # Title
+        title_label = ttk.Label(self.tab, text="MIDI Controller", style="Header.TLabel")
+        title_label.pack(pady=(0, 10))
+        
+        # MIDI Status - moved to the top under the title
+        self.midi_status = ttk.Label(self.tab, text="MIDI Status: Not connected", foreground="red")
+        self.midi_status.pack(pady=(0, 20))
+        
+        # MIDI Port Selection - Enhanced with better visual emphasis
+        port_frame = ttk.LabelFrame(self.tab, text="MIDI Output")
+        port_frame.pack(fill=tk.X, pady=10)
+        
+        port_subframe = ttk.Frame(port_frame)
+        port_subframe.pack(fill=tk.X, pady=10, padx=10)
+        
+        # Device selection header with improved visibility
+        device_header = ttk.Label(port_subframe, text="Select MIDI Device:", style="Info.TLabel")
+        device_header.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        
+        ttk.Label(port_subframe, text="MIDI Port:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.port_var = tk.StringVar(value="No MIDI ports available")
+        # Increased the dropdown width and made it more prominent
+        self.port_dropdown = ttk.Combobox(port_subframe, textvariable=self.port_var, state="readonly", width=30)
+        self.port_dropdown.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        self.port_dropdown.bind("<<ComboboxSelected>>", self.on_port_selected)
+        
+        # Added tooltip-style help text
+        port_help = ttk.Label(port_subframe, text="Select your MIDI output device", foreground="gray", font=("Arial", 8))
+        port_help.grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # Added more prominent refresh button
+        self.refresh_ports_btn = ttk.Button(port_subframe, text="Refresh Devices", command=self.refresh_midi_ports, width=15)
+        self.refresh_ports_btn.grid(row=1, column=2, padx=5, pady=5)
+        
+        # Added refresh help text
+        refresh_help = ttk.Label(port_subframe, text="Click to scan for new devices", foreground="gray", font=("Arial", 8))
+        refresh_help.grid(row=2, column=2, sticky=tk.W, padx=5)
+        
+        # MIDI Channel selection
+        ttk.Label(port_subframe, text="MIDI Channel:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.channel_var = tk.IntVar(value=self.app.midi_channel)
+        channel_dropdown = ttk.Combobox(port_subframe, textvariable=self.channel_var, state="readonly",
+                                        values=list(range(1, 17)))
+        channel_dropdown.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        channel_dropdown.bind("<<ComboboxSelected>>", self.on_channel_selected)
+        
+        port_subframe.grid_columnconfigure(1, weight=1)
+        
+        # Connection status with a clear visual indicator
+        self.connection_indicator = ttk.Frame(port_subframe, width=15, height=15, style="Red.TFrame")
+        self.connection_indicator.grid(row=3, column=2, padx=5, pady=5)
+        
+        # Configure indicator styles
+        style = ttk.Style()
+        style.configure("Red.TFrame", background="red")
+        style.configure("Green.TFrame", background="green")
+        style.configure("Yellow.TFrame", background="yellow")
+        
+        # MIDI Controls frame
+        controls_frame = ttk.LabelFrame(self.tab, text="MIDI Controls")
+        controls_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Note controls
+        note_frame = ttk.Frame(controls_frame)
+        note_frame.pack(fill=tk.X, pady=10, padx=10)
+        
+        ttk.Label(note_frame, text="Note Controls", style="Info.TLabel").grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 10))
+        
+        # Note Number Control
+        ttk.Label(note_frame, text="Note Number:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        
+        self.note_var = tk.IntVar(value=60)  # Middle C
+        note_spin = ttk.Spinbox(note_frame, from_=0, to=127, textvariable=self.note_var, width=5)
+        note_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        # Note Velocity Control
+        ttk.Label(note_frame, text="Velocity:").grid(row=1, column=2, sticky=tk.W, padx=5)
+        
+        self.velocity_var = tk.IntVar(value=100)
+        velocity_spin = ttk.Spinbox(note_frame, from_=0, to=127, textvariable=self.velocity_var, width=5)
+        velocity_spin.grid(row=1, column=3, sticky=tk.W, padx=5)
+        
+        # Note Buttons
+        note_buttons_frame = ttk.Frame(note_frame)
+        note_buttons_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=10)
+        
+        send_note_on = ttk.Button(note_buttons_frame, text="Note On", command=self.send_note_on)
+        send_note_on.pack(side=tk.LEFT, padx=(0, 5))
+        
+        send_note_off = ttk.Button(note_buttons_frame, text="Note Off", command=self.send_note_off)
+        send_note_off.pack(side=tk.LEFT, padx=5)
+        
+        # CC Controls
+        cc_frame = ttk.Frame(controls_frame)
+        cc_frame.pack(fill=tk.X, pady=10, padx=10)
+        
+        ttk.Label(cc_frame, text="CC Controls", style="Info.TLabel").grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 10))
+        
+        # CC Number Control
+        ttk.Label(cc_frame, text="CC Number:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        
+        self.cc_var = tk.IntVar(value=1)
+        cc_spin = ttk.Spinbox(cc_frame, from_=0, to=127, textvariable=self.cc_var, width=5)
+        cc_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        # CC Value Control
+        ttk.Label(cc_frame, text="CC Value:").grid(row=1, column=2, sticky=tk.W, padx=5)
+        
+        self.cc_value_var = tk.IntVar(value=64)
+        cc_value_spin = ttk.Spinbox(cc_frame, from_=0, to=127, textvariable=self.cc_value_var, width=5)
+        cc_value_spin.grid(row=1, column=3, sticky=tk.W, padx=5)
+        
+        # Value Slider
+        self.cc_slider = ttk.Scale(cc_frame, from_=0, to=127, orient="horizontal", variable=self.cc_value_var)
+        self.cc_slider.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # Send CC Button
+        send_cc_btn = ttk.Button(cc_frame, text="Send CC", command=self.send_cc)
+        send_cc_btn.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        # Preset management
+        preset_frame = ttk.LabelFrame(self.tab, text="Presets")
+        preset_frame.pack(fill=tk.X, pady=10)
+        
+        preset_controls = ttk.Frame(preset_frame)
+        preset_controls.pack(fill=tk.X, pady=10, padx=10)
+        
+        # Preset Name
+        ttk.Label(preset_controls, text="Name:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.preset_name_var = tk.StringVar()
+        preset_name_entry = ttk.Entry(preset_controls, textvariable=self.preset_name_var)
+        preset_name_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # Preset buttons
+        save_preset_btn = ttk.Button(preset_controls, text="Save Preset", command=self.save_preset)
+        save_preset_btn.grid(row=0, column=2, padx=5, pady=5)
+        
+        # Preset list
+        preset_list_frame = ttk.Frame(preset_frame)
+        preset_list_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        self.preset_listbox = tk.Listbox(preset_list_frame, height=4)
+        self.preset_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        preset_scrollbar = ttk.Scrollbar(preset_list_frame, orient="vertical", command=self.preset_listbox.yview)
+        preset_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.preset_listbox.config(yscrollcommand=preset_scrollbar.set)
+        self.preset_listbox.bind("<Double-1>", self.load_selected_preset)
+        
+        # Load preset button
+        preset_buttons_frame = ttk.Frame(preset_frame)
+        preset_buttons_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        load_preset_btn = ttk.Button(preset_buttons_frame, text="Load Preset", command=self.load_preset)
+        load_preset_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        delete_preset_btn = ttk.Button(preset_buttons_frame, text="Delete Preset", command=self.delete_preset)
+        delete_preset_btn.pack(side=tk.LEFT)
+          # Populate with available MIDI ports
+        self.refresh_midi_ports()
+        self.refresh_preset_list()
+        
+    def refresh_midi_ports(self):
+        """Refresh the list of available MIDI ports"""
+        from modules.midi import get_midi_ports
+        import os
+        
+        # Update status to show we're scanning
+        self.midi_status.config(text="Scanning for MIDI devices...", foreground="blue")
+        self.connection_indicator.configure(style="Yellow.TFrame")
+        self.tab.update()  # Force UI update to show the scanning status
+        
+        # Get available ports - add a small delay to ensure any hardware changes are registered
+        import time
+        time.sleep(0.5)  # Short delay to allow MIDI system to stabilize
+        
+        # Check if we have a wrapper error that indicates DLL issues
+        from modules.midi_wrapper import MIDI_ERROR
+        
+        if MIDI_ERROR and ("dll" in MIDI_ERROR.lower() or "cannot find" in MIDI_ERROR.lower()):
+            # If there's a DLL error, show the troubleshooter
+            from modules.midi_helper import show_midi_troubleshooter
+            show_midi_troubleshooter(error_message=MIDI_ERROR, is_dll_error=True)
+        
+        # Get the ports with our enhanced detection
+        midi_detection = get_midi_ports()
+        ports = midi_detection.get('ports', [])
+        system_devices = midi_detection.get('system_devices', [])
+        
+        if ports:
+            # Store the currently selected port if any
+            current_port = self.port_var.get()
+            
+            # Update dropdown with all available ports
+            self.port_dropdown['values'] = ports
+            self.port_dropdown.config(state="readonly")
+            
+            # Try to maintain the previously selected port if it's still available
+            if current_port in ports and current_port != "No MIDI ports available":
+                self.port_var.set(current_port)
+            else:
+                self.port_var.set(ports[0])
+            
+            # Reset the dropdown if needed and update the status
+            self.midi_status.config(text=f"Found {len(ports)} MIDI devices", foreground="blue")
+            
+            # Force the port selection handler to run
+            self.on_port_selected()
+        else:
+            # If we found system devices but couldn't connect via MIDI libraries
+            if system_devices:
+                self.midi_status.config(text=f"System found MIDI devices but couldn't connect", foreground="orange")
+                self.connection_indicator.configure(style="Yellow.TFrame")
+                
+                # Add special options for audio interfaces
+                audio_interfaces = [device for device in system_devices if device.startswith("Audio Interface:")]
+                midi_devices = [device for device in system_devices if not device.startswith("Audio Interface:")]
+                
+                # Format the device list for display
+                device_list = ""
+                if midi_devices:
+                    device_list += "MIDI Devices:\n" + "\n".join(f"- {device}" for device in midi_devices) + "\n\n"
+                if audio_interfaces:
+                    device_list += "Audio Interfaces (may have MIDI):\n" + "\n".join(f"- {device.replace('Audio Interface: ', '')}" for device in audio_interfaces)
+                
+                # Show dialog with special options for audio interfaces
+                from tkinter import messagebox
+                result = messagebox.askyesno("Audio Interface MIDI", 
+                                       f"Found potential MIDI devices that couldn't be accessed through standard methods.\n\n" +
+                                       f"{device_list}\n\n" +
+                                       "Would you like to try the audio interface compatibility mode?\n\n" +
+                                       "(This may help with certain audio interfaces that have MIDI capabilities)")
+                
+                if result:
+                    # Try audio interface compatibility mode
+                    self._try_audio_interface_mode()
+                    return
+            
+            # No MIDI devices found or couldn't enumerate
+            self.port_dropdown['values'] = ["No MIDI ports available"]
+            self.port_var.set("No MIDI ports available")
+            self.port_dropdown.config(state="disabled")
+            self.midi_status.config(text="MIDI Status: No devices found", foreground="red")
+            self.connection_indicator.configure(style="Red.TFrame")
+            
+    def on_port_selected(self, event=None):
+        """Handle MIDI port selection"""
+        from modules.midi import MIDI_LIBRARY, close_midi_port
+        import os
+        
+        selected_port = self.port_var.get()
+        
+        if selected_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: No devices available", foreground="red")
+            self.connection_indicator.configure(style="Red.TFrame")
+            
+            # Add right-click menu for advanced options
+            if not hasattr(self, "port_context_menu"):
+                self.port_context_menu = tk.Menu(self.tab, tearoff=0)
+                self.port_context_menu.add_command(label="Audio Interface Mode", command=self._try_audio_interface_mode)
+                self.port_context_menu.add_command(label="Force Manual Port", command=self._force_manual_port)
+                
+                # Bind right-click to dropdown
+                self.port_dropdown.bind("<Button-3>", self._show_port_context_menu)
+                
+            return
+            
+        # Close any existing connection first
+        if self.app.current_midi_port is not None:
+            close_midi_port(self.app.midi_outputs, self.app.current_midi_port)
+            self.app.current_midi_port = None
+            
+        try:
+            # Attempt to connect to the selected port
+            if MIDI_LIBRARY == "rtmidi":
+                # Show connecting status
+                self.midi_status.config(text=f"Connecting to {selected_port}...", foreground="blue")
+                self.connection_indicator.configure(style="Yellow.TFrame")
+                self.tab.update()  # Force UI update
+                
+                # Open the selected port
+                port_index = self.port_dropdown['values'].index(selected_port)
+                self.app.midi_outputs["rtmidi"].open_port(port_index)
+                self.app.current_midi_port = port_index
+                
+                # Send a test message to verify connection (empty CC message)
+                self.app.midi_outputs["rtmidi"].send_message([0xB0, 0, 0])
+                
+                self.midi_status.config(text=f"MIDI Status: Connected to {selected_port}", foreground="green")
+                self.connection_indicator.configure(style="Green.TFrame")
+                
+            elif MIDI_LIBRARY == "mido":
+                # For mido, we'll verify the port exists and is accessible
+                self.midi_status.config(text=f"Selecting {selected_port}...", foreground="blue")
+                self.connection_indicator.configure(style="Yellow.TFrame")
+                self.tab.update()  # Force UI update
+                
+                # Try opening and immediately closing the port to test
+                import mido
+                with mido.open_output(selected_port) as port:
+                    pass  # Just testing if we can open it
+                    
+                self.app.current_midi_port = selected_port
+                self.midi_status.config(text=f"MIDI Status: Ready to use {selected_port}", foreground="green")
+                self.connection_indicator.configure(style="Green.TFrame")
+                
+        except Exception as e:
+            self.app.current_midi_port = None
+            error_message = str(e)
+            if "error creating MIDI output port" in error_message.lower():
+                self.midi_status.config(text=f"Error: Device in use or unavailable", foreground="red")
+            else:
+                self.midi_status.config(text=f"Connection Error: {error_message}", foreground="red")
+            self.connection_indicator.configure(style="Red.TFrame")
+            
+    def on_channel_selected(self, event=None):
+        """Handle MIDI channel selection"""
+        self.app.midi_channel = self.channel_var.get()
+        
+        # Save the channel preference
+        self.app.save_midi_config()
+            
+    def send_note_on(self):
+        """Send MIDI Note On message"""
+        from modules.midi import send_midi_message
+        
+        if not self.app.current_midi_port or self.app.current_midi_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: Not connected", foreground="red")
+            messagebox.showerror("MIDI Error", "No MIDI device connected.\nPlease select a MIDI device first.")
+            return
+            
+        note = self.note_var.get()
+        velocity = self.velocity_var.get()
+        
+        success = send_midi_message(
+            self.app.midi_outputs, 
+            self.app.current_midi_port, 
+            "note_on", 
+            self.app.midi_channel, 
+            note, 
+            velocity
+        )
+        
+        if success:
+            self.midi_status.config(text=f"MIDI Status: Sent Note On {note} with velocity {velocity}", foreground="green")
+        else:
+            self.midi_status.config(text="MIDI Error: Failed to send Note On message", foreground="red")
+            messagebox.showerror("MIDI Error", "Failed to send Note On message.\nCheck your MIDI device connection.")
+            
+    def send_note_off(self):
+        """Send MIDI Note Off message"""
+        from modules.midi import send_midi_message
+        
+        if not self.app.current_midi_port or self.app.current_midi_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: Not connected", foreground="red")
+            messagebox.showerror("MIDI Error", "No MIDI device connected.\nPlease select a MIDI device first.")
+            return
+            
+        note = self.note_var.get()
+        
+        success = send_midi_message(
+            self.app.midi_outputs, 
+            self.app.current_midi_port, 
+            "note_off", 
+            self.app.midi_channel, 
+            note, 
+            0
+        )
+        
+        if success:
+            self.midi_status.config(text=f"MIDI Status: Sent Note Off {note}", foreground="green")
+        else:
+            self.midi_status.config(text="MIDI Error: Failed to send Note Off message", foreground="red")
+            messagebox.showerror("MIDI Error", "Failed to send Note Off message.\nCheck your MIDI device connection.")
+            
+    def send_cc(self):
+        """Send MIDI CC message"""
+        from modules.midi import send_midi_message
+        
+        if not self.app.current_midi_port or self.app.current_midi_port == "No MIDI ports available":
+            self.midi_status.config(text="MIDI Status: Not connected", foreground="red")
+            messagebox.showerror("MIDI Error", "No MIDI device connected.\nPlease select a MIDI device first.")
+            return
+            
+        cc_num = self.cc_var.get()
+        cc_val = self.cc_value_var.get()
+        
+        success = send_midi_message(
+            self.app.midi_outputs,
+            self.app.current_midi_port,
+            "control_change",
+            self.app.midi_channel,
+            cc_num,
+            cc_val
+        )
+        
+        if success:
+            self.midi_status.config(text=f"MIDI Status: Sent CC {cc_num} with value {cc_val}", foreground="green")
+        else:
+            self.midi_status.config(text="MIDI Error: Failed to send CC message", foreground="red")
+            messagebox.showerror("MIDI Error", "Failed to send CC message.\nCheck your MIDI device connection.")
+
+    def save_preset(self):
+        """Save current MIDI settings as a preset"""
+        name = self.preset_name_var.get()
+        if not name:
+            # Generate a default name if none provided
+            name = f"Preset {len(self.app.midi_presets) + 1}"
+            self.preset_name_var.set(name)
+            
+        preset = {
+            'name': name,
+            'channel': self.app.midi_channel,
+            'note': self.note_var.get(),
+            'velocity': self.velocity_var.get(),
+            'cc': self.cc_var.get(),
+            'cc_value': self.cc_value_var.get()
+        }
+        
+        # Check if preset with this name exists and update it, or add new
+        for i, p in enumerate(self.app.midi_presets):
+            if p['name'] == name:
+                self.app.midi_presets[i] = preset
+                break
+        else:
+            self.app.midi_presets.append(preset)
+            
+        self.app.save_midi_config()
+        self.refresh_preset_list()
+        self.midi_status.config(text=f"MIDI Status: Preset '{name}' saved", foreground="green")
+
+    def load_preset(self):
+        """Load selected preset"""
+        selected = self.preset_listbox.curselection()
+        if not selected:
+            return
+            
+        index = selected[0]
+        if 0 <= index < len(self.app.midi_presets):
+            self._apply_preset(self.app.midi_presets[index])
+            
+    def load_selected_preset(self, event=None):
+        """Load preset when double-clicked in the listbox"""
+        self.load_preset()
+            
+    def _apply_preset(self, preset):
+        """Apply preset values to the UI"""
+        self.preset_name_var.set(preset['name'])
+        self.channel_var.set(preset['channel'])
+        self.app.midi_channel = preset['channel']
+        self.note_var.set(preset['note'])
+        self.velocity_var.set(preset['velocity'])
+        self.cc_var.set(preset['cc'])
+        self.cc_value_var.set(preset['cc_value'])
+        self.midi_status.config(text=f"MIDI Status: Loaded preset '{preset['name']}'", foreground="green")
+            
+    def delete_preset(self):
+        """Delete selected preset"""
+        selected = self.preset_listbox.curselection()
+        if not selected:
+            return
+              index = selected[0]
+        if 0 <= index < len(self.app.midi_presets):
+            preset_name = self.app.midi_presets[index]['name']
+            del self.app.midi_presets[index]
+            self.app.save_midi_config()
+            self.refresh_preset_list()
+            self.midi_status.config(text=f"MIDI Status: Preset '{preset_name}' deleted", foreground="green")
+            
+    def refresh_preset_list(self):
+        """Update the preset listbox"""
+        self.preset_listbox.delete(0, tk.END)
+        for preset in self.app.midi_presets:
+            self.preset_listbox.insert(tk.END, preset['name'])
+            
+    def close_connection(self):
+        """Close MIDI connection if open"""
+        from modules.midi import MIDI_LIBRARY, close_midi_port
+        
+        if MIDI_LIBRARY == "rtmidi" and self.app.current_midi_port is not None:
+            close_midi_port(self.app.midi_outputs, self.app.current_midi_port)
+            
+    def _try_audio_interface_mode(self):
+        """Special detection mode for audio interfaces with MIDI capabilities"""
+        import time
+        import os
+        import tkinter as tk
+        from tkinter import ttk, simpledialog, messagebox
+        from modules.midi import MIDI_LIBRARY, detect_audio_interface_midi, force_open_midi_port
+        from modules.midi_helper import check_loopmidi_installation, check_midi_availability
+        
+        # First check if loopMIDI is installed as a potential solution
+        has_loopmidi = check_loopmidi_installation()
+        
+        # First try specialized detection
+        self.midi_status.config(text="Trying audio interface detection mode...", foreground="blue")
+        self.connection_indicator.configure(style="Yellow.TFrame")
+        self.tab.update()  # Force UI update
+        
+        # Use specialized detection
+        ports = detect_audio_interface_midi()
+        
+        if ports:
+            # Update dropdown with the detected ports
+            self.port_dropdown['values'] = ports
+            self.port_var.set(ports[0])
+            self.port_dropdown.config(state="readonly")
+            
+            # Show success message
+            self.midi_status.config(text=f"Audio interface detection found {len(ports)} devices", foreground="green")
+            self.connection_indicator.configure(style="Green.TFrame")
+            
+            # Try to connect
+            self.on_port_selected()
+            return
+            
+        # If that fails, check if loopMIDI is installed but no ports are created
+        if has_loopmidi:
+            result = messagebox.askyesno("loopMIDI Detected", 
+                                       "You have loopMIDI installed, but no virtual MIDI ports are active.\n\n" +
+                                       "Would you like to open loopMIDI to create a virtual port?\n\n" +
+                                       "After creating a port, click 'Refresh Devices' in the MIDI tab.")
+            if result:
+                try:
+                    # Try to launch loopMIDI
+                    program_files = ["C:\\Program Files", "C:\\Program Files (x86)"]
+                    for path in program_files:
+                        loopmidi_path = os.path.join(path, "Tobias Erichsen", "loopMIDI", "loopMIDI.exe")
+                        if os.path.exists(loopmidi_path):
+                            os.startfile(loopmidi_path)
+                            return
+                    # If executable not found in standard locations
+                    os.startfile("loopMIDI.exe")
+                except Exception:
+                    messagebox.showinfo("Manual Launch Needed", 
+                                      "Please launch loopMIDI manually from your Start Menu.")
+            return
+            
+        # If no loopMIDI and no ports, show the manual entry dialog
+        result = messagebox.askyesno("Audio Interface Detection", 
+                                    "No MIDI devices were found automatically.\n\n" +
+                                    "Would you like to try entering your audio interface's MIDI port name manually?\n\n" +
+                                    "Common names include:\n" +
+                                    "- '[Interface Name] MIDI'\n" +
+                                    "- 'MIDI Out'\n" +
+                                    "- '[Brand] MIDI Out 1'")
+                                    
+        if result:
+            self._force_manual_port()
+
+    def _show_port_context_menu(self, event):
+        """Show context menu for port dropdown"""
+        if hasattr(self, "port_context_menu"):
+            try:
+                self.port_context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.port_context_menu.grab_release()
+    
+    def _force_manual_port(self):
+        """Force manual MIDI port entry for troubleshooting"""
+        from tkinter import simpledialog
+        import re
+        
+        # Get manual port entry
+        port_name = simpledialog.askstring("Manual MIDI Port", 
+                                         "Enter the exact name of your MIDI port:\n\n" +
+                                         "For audio interfaces, try:\n" +
+                                         "- '[interface name] MIDI 1'\n" +
+                                         "- '[interface name] MIDI Out'")
+        
+        if port_name and port_name.strip():
+            port_name = port_name.strip()
+            
+            # Update dropdown with the manual port name
+            self.port_dropdown['values'] = [port_name]
+            self.port_var.set(port_name)
+            self.port_dropdown.config(state="readonly")
+            
+            # Try to connect
+            self.midi_status.config(text=f"Attempting to connect to manual port: {port_name}", foreground="blue")
+            self.connection_indicator.configure(style="Yellow.TFrame")
+            self.on_port_selected()

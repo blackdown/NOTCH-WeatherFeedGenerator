@@ -1,4 +1,4 @@
-"""
+﻿"""
 MIDI tab functionality for NOTCH Data Tool
 """
 import tkinter as tk
@@ -179,10 +179,11 @@ class MidiTab:
         # Populate with available MIDI ports
         self.refresh_midi_ports()
         self.refresh_preset_list()
-
+        
     def refresh_midi_ports(self):
         """Refresh the list of available MIDI ports"""
         from modules.midi import get_midi_ports
+        import os
         
         # Update status to show we're scanning
         self.midi_status.config(text="Scanning for MIDI devices...", foreground="blue")
@@ -193,8 +194,18 @@ class MidiTab:
         import time
         time.sleep(0.5)  # Short delay to allow MIDI system to stabilize
         
+        # Check if we have a wrapper error that indicates DLL issues
+        from modules.midi_wrapper import MIDI_ERROR
+        
+        if MIDI_ERROR and ("dll" in MIDI_ERROR.lower() or "cannot find" in MIDI_ERROR.lower()):
+            # If there's a DLL error, show the troubleshooter
+            from modules.midi_helper import show_midi_troubleshooter
+            show_midi_troubleshooter(error_message=MIDI_ERROR, is_dll_error=True)
+        
         # Get the ports with our enhanced detection
-        ports = get_midi_ports()
+        midi_detection = get_midi_ports()
+        ports = midi_detection.get('ports', [])
+        system_devices = midi_detection.get('system_devices', [])
         
         if ports:
             # Store the currently selected port if any
@@ -217,27 +228,34 @@ class MidiTab:
             self.on_port_selected()
         else:
             # If we found system devices but couldn't connect via MIDI libraries
-            import subprocess
-            try:
-                # Try one more approach - check Windows Device Manager for MIDI devices
-                if os.name == 'nt':  # Windows
-                    result = subprocess.run(['powershell', '-Command', 
-                                           "Get-WmiObject Win32_PnPEntity | Where-Object{$_.Name -match 'MIDI'} | Select-Object Name"], 
-                                           capture_output=True, text=True)
-                    lines = [l.strip() for l in result.stdout.strip().split('\n') if l.strip() and not l.startswith("Name")]
-                    
-                    if lines:
-                        self.midi_status.config(text=f"System found {len(lines)} MIDI devices but couldn't connect", foreground="orange")
-                        self.connection_indicator.configure(style="Yellow.TFrame")
-                        messagebox.showinfo("MIDI Detection", 
-                                           f"Found {len(lines)} MIDI devices in your system but couldn't connect to them through the MIDI libraries.\n\n" +
-                                           "This might be due to the devices being used by another application or " +
-                                           "requiring special drivers.\n\n" +
-                                           f"Devices detected: {', '.join(lines)}")
-                        return
-            except:
-                pass
+            if system_devices:
+                self.midi_status.config(text=f"System found MIDI devices but couldn't connect", foreground="orange")
+                self.connection_indicator.configure(style="Yellow.TFrame")
                 
+                # Add special options for audio interfaces
+                audio_interfaces = [device for device in system_devices if device.startswith("Audio Interface:")]
+                midi_devices = [device for device in system_devices if not device.startswith("Audio Interface:")]
+                
+                # Format the device list for display
+                device_list = ""
+                if midi_devices:
+                    device_list += "MIDI Devices:\n" + "\n".join(f"- {device}" for device in midi_devices) + "\n\n"
+                if audio_interfaces:
+                    device_list += "Audio Interfaces (may have MIDI):\n" + "\n".join(f"- {device.replace('Audio Interface: ', '')}" for device in audio_interfaces)
+                
+                # Show dialog with special options for audio interfaces
+                from tkinter import messagebox
+                result = messagebox.askyesno("Audio Interface MIDI", 
+                                       f"Found potential MIDI devices that couldn't be accessed through standard methods.\n\n" +
+                                       f"{device_list}\n\n" +
+                                       "Would you like to try the audio interface compatibility mode?\n\n" +
+                                       "(This may help with certain audio interfaces that have MIDI capabilities)")
+                
+                if result:
+                    # Try audio interface compatibility mode
+                    self._try_audio_interface_mode()
+                    return
+            
             # No MIDI devices found or couldn't enumerate
             self.port_dropdown['values'] = ["No MIDI ports available"]
             self.port_var.set("No MIDI ports available")
@@ -248,12 +266,23 @@ class MidiTab:
     def on_port_selected(self, event=None):
         """Handle MIDI port selection"""
         from modules.midi import MIDI_LIBRARY, close_midi_port
+        import os
         
         selected_port = self.port_var.get()
         
         if selected_port == "No MIDI ports available":
             self.midi_status.config(text="MIDI Status: No devices available", foreground="red")
             self.connection_indicator.configure(style="Red.TFrame")
+            
+            # Add right-click menu for advanced options
+            if not hasattr(self, "port_context_menu"):
+                self.port_context_menu = tk.Menu(self.tab, tearoff=0)
+                self.port_context_menu.add_command(label="Audio Interface Mode", command=self._try_audio_interface_mode)
+                self.port_context_menu.add_command(label="Force Manual Port", command=self._force_manual_port)
+                
+                # Bind right-click to dropdown
+                self.port_dropdown.bind("<Button-3>", self._show_port_context_menu)
+                
             return
             
         # Close any existing connection first
@@ -471,3 +500,104 @@ class MidiTab:
         
         if MIDI_LIBRARY == "rtmidi" and self.app.current_midi_port is not None:
             close_midi_port(self.app.midi_outputs, self.app.current_midi_port)
+            
+    def _try_audio_interface_mode(self):
+        """Special detection mode for audio interfaces with MIDI capabilities"""
+        import time
+        import os
+        import tkinter as tk
+        from tkinter import ttk, simpledialog, messagebox
+        from modules.midi import MIDI_LIBRARY, detect_audio_interface_midi, force_open_midi_port
+        from modules.midi_helper import check_loopmidi_installation, check_midi_availability
+        
+        # First check if loopMIDI is installed as a potential solution
+        has_loopmidi = check_loopmidi_installation()
+        
+        # First try specialized detection
+        self.midi_status.config(text="Trying audio interface detection mode...", foreground="blue")
+        self.connection_indicator.configure(style="Yellow.TFrame")
+        self.tab.update()  # Force UI update
+        
+        # Use specialized detection
+        ports = detect_audio_interface_midi()
+        
+        if ports:
+            # Update dropdown with the detected ports
+            self.port_dropdown['values'] = ports
+            self.port_var.set(ports[0])
+            self.port_dropdown.config(state="readonly")
+            
+            # Show success message
+            self.midi_status.config(text=f"Audio interface detection found {len(ports)} devices", foreground="green")
+            self.connection_indicator.configure(style="Green.TFrame")
+            
+            # Try to connect
+            self.on_port_selected()
+            return
+            
+        # If that fails, check if loopMIDI is installed but no ports are created
+        if has_loopmidi:
+            result = messagebox.askyesno("loopMIDI Detected", 
+                                       "You have loopMIDI installed, but no virtual MIDI ports are active.\n\n" +
+                                       "Would you like to open loopMIDI to create a virtual port?\n\n" +
+                                       "After creating a port, click 'Refresh Devices' in the MIDI tab.")
+            if result:
+                try:
+                    # Try to launch loopMIDI
+                    program_files = ["C:\\Program Files", "C:\\Program Files (x86)"]
+                    for path in program_files:
+                        loopmidi_path = os.path.join(path, "Tobias Erichsen", "loopMIDI", "loopMIDI.exe")
+                        if os.path.exists(loopmidi_path):
+                            os.startfile(loopmidi_path)
+                            return
+                    # If executable not found in standard locations
+                    os.startfile("loopMIDI.exe")
+                except Exception:
+                    messagebox.showinfo("Manual Launch Needed", 
+                                      "Please launch loopMIDI manually from your Start Menu.")
+            return
+            
+        # If no loopMIDI and no ports, show the manual entry dialog
+        result = messagebox.askyesno("Audio Interface Detection", 
+                                    "No MIDI devices were found automatically.\n\n" +
+                                    "Would you like to try entering your audio interface's MIDI port name manually?\n\n" +
+                                    "Common names include:\n" +
+                                    "- '[Interface Name] MIDI'\n" +
+                                    "- 'MIDI Out'\n" +
+                                    "- '[Brand] MIDI Out 1'")
+                                    
+        if result:
+            self._force_manual_port()
+
+    def _show_port_context_menu(self, event):
+        """Show context menu for port dropdown"""
+        if hasattr(self, "port_context_menu"):
+            try:
+                self.port_context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.port_context_menu.grab_release()
+    
+    def _force_manual_port(self):
+        """Force manual MIDI port entry for troubleshooting"""
+        from tkinter import simpledialog
+        import re
+        
+        # Get manual port entry
+        port_name = simpledialog.askstring("Manual MIDI Port", 
+                                         "Enter the exact name of your MIDI port:\n\n" +
+                                         "For audio interfaces, try:\n" +
+                                         "- '[interface name] MIDI 1'\n" +
+                                         "- '[interface name] MIDI Out'")
+        
+        if port_name and port_name.strip():
+            port_name = port_name.strip()
+            
+            # Update dropdown with the manual port name
+            self.port_dropdown['values'] = [port_name]
+            self.port_var.set(port_name)
+            self.port_dropdown.config(state="readonly")
+            
+            # Try to connect
+            self.midi_status.config(text=f"Attempting to connect to manual port: {port_name}", foreground="blue")
+            self.connection_indicator.configure(style="Yellow.TFrame")
+            self.on_port_selected()
