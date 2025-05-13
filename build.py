@@ -87,11 +87,10 @@ def build_executable():
         pyinstaller_cmd = find_pyinstaller()
         
         # Build command arguments
-        if isinstance(pyinstaller_cmd, list):
-            command = pyinstaller_cmd + [
+        if isinstance(pyinstaller_cmd, list):            command = pyinstaller_cmd + [
                 '--onefile',
                 '--windowed',
-                '--name=NOTCH Data Tool',  # Updated name to match spec file
+                '--name=NOTCH-Data-Tool',  # Updated name to remove spaces
                 '--add-data=readme.md;.',
             ]
         else:
@@ -99,7 +98,7 @@ def build_executable():
                 pyinstaller_cmd,
                 '--onefile',
                 '--windowed',
-                '--name=NOTCH Data Tool',  # Updated name to match spec file
+                '--name=NOTCH-Data-Tool',  # Updated name to remove spaces
                 '--add-data=readme.md;.',
             ]
             
@@ -145,7 +144,7 @@ def build_executable():
         return False
 
 if __name__ == "__main__":
-    print("===== NOTCH Data Tool Builder =====")  # Updated name
+    print("===== NOTCH-Data-Tool Builder =====")  # Updated name without spaces
     
     if install_requirements():
         build_executable()

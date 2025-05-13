@@ -55,10 +55,10 @@ The NOTCH Data Tool can be run from the command line with the following options:
 
 ```bash
 # Basic usage with settings from config.ini
-NOTCH Data Tool.exe
+NOTCH-Data-Tool.exe
 
 # Run in command-line mode with options
-NOTCH Data Tool.exe --city="Paris" --interval=5
+NOTCH-Data-Tool.exe --city="Paris" --interval=5
 ```
 
 ### Python Script
