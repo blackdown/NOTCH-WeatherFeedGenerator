@@ -1,5 +1,4 @@
 import requests
-import json
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
