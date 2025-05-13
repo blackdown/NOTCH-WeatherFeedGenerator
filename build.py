@@ -4,7 +4,16 @@ import subprocess
 import pkg_resources
 import platform
 
-required_packages = {'pyinstaller', 'requests', 'python-rtmidi'}
+# Define required packages
+required_packages = {'pyinstaller', 'requests'}
+
+# Define MIDI packages to try (in order of preference)
+midi_packages = [
+    'python-rtmidi',           # Preferred but requires C++ compiler
+    'python-rtmidi==1.4.9',    # Try specific older version
+    'mido',                    # Pure Python alternative
+    'python-rtmidi --no-deps'  # Try without dependencies as last resort
+]
 
 def install_requirements():
     """Install required packages if they're not already installed"""
@@ -19,7 +28,37 @@ def install_requirements():
         except Exception as e:
             print(f"Error installing packages: {e}")
             return False
+    
+    # Try to install MIDI library
+    try_install_midi()
+    
+    # Add Pillow for icon generation
+    try:
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pillow'], 
+                            stderr=subprocess.PIPE,
+                            stdout=subprocess.PIPE)
+    except Exception:
+        print("Note: Pillow installation failed, icon generation will be skipped")
+    
     return True
+
+def try_install_midi():
+    """Try to install MIDI libraries in order of preference"""
+    print("Attempting to install MIDI library...")
+    
+    for package in midi_packages:
+        print(f"Trying to install {package}...")
+        try:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', package], 
+                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.PIPE)
+            print(f"Successfully installed {package}")
+            return True
+        except subprocess.CalledProcessError:
+            print(f"Failed to install {package}, trying next option...")
+    
+    print("WARNING: Could not install any MIDI library. MIDI functionality may be limited.")
+    return False
 
 def find_pyinstaller():
     """Find the PyInstaller executable in the Python scripts directory"""
@@ -145,8 +184,11 @@ def build_executable():
 
 if __name__ == "__main__":
     print("===== NOTCH-Data-Tool Builder =====")  # Updated name without spaces
+    print("Installing required packages...")
     
     if install_requirements():
+        print("\nStarting build process...")
         build_executable()
     else:
-        print("Failed to install required packages. Build aborted.")
+        print("Failed to install critical required packages. Build aborted.")
+        print("Note: You may need to install Visual C++ Build Tools to compile python-rtmidi.")

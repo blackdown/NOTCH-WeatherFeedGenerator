@@ -21,7 +21,8 @@ exe = EXE(
     a.scripts,
     a.binaries,
     a.datas,
-    [],    name='NOTCH-Data-Tool',
+    [],
+    name='NOTCH-Data-Tool',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -34,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['weather.ico'],
 )
