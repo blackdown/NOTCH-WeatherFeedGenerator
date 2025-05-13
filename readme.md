@@ -1,24 +1,26 @@
-# NOTCH Weather Feed Generator
+# NOTCH Data Tool
 
-A Python application that fetches and monitors weather data using the OpenWeatherMap (free) API with a simple GUI.
+A Python application that fetches weather data and generates MIDI control data for integration with NOTCH and other MIDI-compatible applications.
 
-## Version 0.1 Pre-release Notes (May 8, 2025)
+## Version 1.0.0
 
-The first pre-release version of the NOTCH Weather Controller! This initial release includes all core functionality.
+The first stable release of the NOTCH Data Tool includes complete weather monitoring functionality and a new MIDI control interface for integration with NOTCH and other MIDI-compatible applications.
 
 ### What's Included
 
-- **Complete Weather Monitoring**: Fetch and display current weather conditions including temperature, weather description, and detailed metrics
+- **Weather Data Integration**: Fetch and display current weather conditions including temperature, weather description, and detailed metrics
+- **MIDI Control Interface**: Send MIDI notes and CC messages to control external applications
+- **Preset Management**: Save and recall your favorite MIDI settings
 - **Dual Interface Options**: Choose between a GUI application or command-line interface
-- **Data Persistence**: Automatic CSV logging for reading with NOTCH
+- **Data Persistence**: Automatic CSV logging for integration with NOTCH
 - **Customizable Settings**: Set your preferred city, update frequency, and securely store your API key
-- **Encrypted API key storage**: Config files stores an encrypted version of your API key.
+- **Encrypted API key storage**: Config file stores an encrypted version of your API key
 
 ### Known Limitations
 
 - Limited to current weather data only
 - Single city monitoring at a time
-- Basic data visualisation only
+- Basic data visualization only
 
 ### Installation
 
@@ -26,35 +28,47 @@ Pre-built executable available in the releases section, or follow the setup inst
 
 ## Features
 
+### Weather Monitoring
 - Retrieves current weather conditions including temperature, weather description, and wind information
 - Updates data automatically with customizable time intervals
 - Saves weather data to a local CSV file for historical tracking
 - Allows users to securely store their own API key
 - Enables users to select different cities for weather data
-- Displays weather information in a clean, modern interface
+
+### MIDI Control
+- Connect to available MIDI output devices
+- Send MIDI note messages with customizable note, velocity, and channel
+- Send MIDI CC messages with adjustable CC number and value
+- Save and recall MIDI presets for quick access to common settings
+
+### Interface
+- Clean, modern tab-based interface
+- Real-time weather display with auto-updates
+- MIDI control panel with interactive controls
+- Settings management for all application features
 
 ## Command Line Options
 
-The NOTCH Weather Controller can be run from the command line with the following options:
+The NOTCH Data Tool can be run from the command line with the following options:
 
 ### Executable (Windows)
 
 ```bash
 # Basic usage with settings from config.ini
-NOTCH-WeatherController.exe
+NOTCH Data Tool.exe
 
 # Run in command-line mode with options
-NOTCH-WeatherController.exe --city="Paris" --interval=5
+NOTCH Data Tool.exe --city="Paris" --interval=5
 ```
 
 ### Python Script
 
 ```bash
 # Basic usage with settings from config.ini
-python fetch_weather.py
+python notch_data_tool.py
 
 # Specify city and update interval
-python fetch_weather.py --city="Berlin" --interval=10
+python notch_data_tool.py --city="Berlin" --interval=10
 ```
 
 #### Available Command Line Arguments
@@ -66,11 +80,16 @@ python fetch_weather.py --city="Berlin" --interval=10
 
 ## Files
 
-- `weather_app.py` - Main GUI application
-- `fetch_weather.py` - Command-line script version
+- `notch_data_tool.py` - Main application entry point
+- `modules/weather_tab.py` - Weather monitoring module
+- `modules/midi_tab.py` - MIDI control interface module
+- `modules/settings_tab.py` - Application settings module
+- `modules/app.py` - Core application framework
+- `modules/midi.py` - MIDI helper functions
+- `modules/config.py` - Configuration management
 - `build.py` - Script to build executable
-- `weather.csv` - CSV file containing the weather data history
-- `config.ini` - Created on first run to store settings (API key, city, update interval)
+- `weather.csv` - CSV file containing weather data history
+- `config.ini` - Created on first run to store settings
 
 ## Setup and Running
 
@@ -78,27 +97,18 @@ python fetch_weather.py --city="Berlin" --interval=10
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/NOTCH-WeatherController.git
-cd NOTCH-WeatherController
+git clone https://github.com/blackdown/NOTCH-Data-Tool.git
+cd NOTCH-Data-Tool
 ```
 
 2. Install required dependencies:
 ```bash
-pip install requests
+pip install requests python-rtmidi
 ```
 
-3. Run the GUI application:
+3. Run the application:
 ```bash
-python weather_app.py
-```
-
-4. Run the command-line version (optional):
-```bash
-# Basic usage with settings from config.ini
-python fetch_weather.py
-
-# Specify city and update interval
-python fetch_weather.py --city="New York" --interval=5
+python notch_data_tool.py
 ```
 
 ### Creating an Executable (Distribution)
@@ -115,18 +125,19 @@ python build.py
 1. When you first run the application, you'll be prompted to enter your OpenWeatherMap API key
 2. If you don't have an API key, you can get one for free at [OpenWeatherMap](https://openweathermap.org/api)
 3. The app will securely store your API key and selected city for future use
+4. You'll need to select a MIDI output device to send MIDI messages
 
 ## Configuration
 
 Your settings are securely stored in a `config.ini` file and include:
-- API key (stored with basic encoding)
+- API key (stored with basic encryption)
 - City preference
-- Update interval (in seconds)
+- Update interval (in minutes)
+- Last used MIDI device
 
 You can change these settings any time through the application interface:
-- Use the city input field and "Set City" button to change location
-- Click "Set Interval" to customize how often the weather data updates (1-60 minutes)
-- Click "API Settings" to update your API key
+- Use the Settings tab to update weather and API settings
+- Use the MIDI tab to configure MIDI output devices and message parameters
 
 ## Weather Data
 
